@@ -442,7 +442,8 @@ st.markdown(f"""
     }}
     button[data-testid="collapsedControl"] span {{ display: none; }}
     [data-testid="collapsedControl"] {{ display: none !important; }}
-    .block-container {{ padding-top: 1rem !important; }}
+    .block-container {{ padding-top: 0rem !important; margin-top: -60px !important; }}
+    header[data-testid="stHeader"] {{ display: none !important; }}
 </style>
 """, unsafe_allow_html=True)
 
