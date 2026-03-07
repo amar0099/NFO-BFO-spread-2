@@ -1,5 +1,5 @@
 fyers-apiv3
-streamlit
+streamlit==1.45.1
 plotly
 pandas
 pyotp
