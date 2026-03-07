@@ -432,7 +432,11 @@ st.markdown(f"""
     div[data-testid="stDecoration"] {{ display: none; }}
     #MainMenu, footer {{ visibility: hidden; }}
     button[data-testid="collapsedControl"] {{ display: none !important; }}
-    section[data-testid="stSidebar"] {{ min-width: 250px !important; max-width: 250px !important; }}
+    
+    section[data-testid="stSidebar"] {{ min-width: 280px !important; max-width: 280px !important; }}
+    div[data-baseweb="popover"] {{ left: 0 !important; right: auto !important; }}
+    div[data-baseweb="calendar"] {{ left: 0 !important; right: auto !important; }}
+    
     .block-container {{ padding-top: 0.5rem !important; }}
     header[data-testid="stHeader"] {{ background: transparent !important; }}
     header[data-testid="stHeader"] > * {{ display: none !important; }}
