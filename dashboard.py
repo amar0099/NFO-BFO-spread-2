@@ -449,6 +449,7 @@ st.markdown(f"""
 with st.sidebar:
     st.markdown("<div style='font-family:Syne;font-size:20px;font-weight:400;margin-bottom:4px;'>⚡ Spread Terminal</div><div style='font-size:11px;color:#94a3b8;margin-bottom:12px;font-family:Space Mono'>NFO / BFO Options</div>", unsafe_allow_html=True)
     fetch_btn = st.button("⟳  FETCH DATA", use_container_width=True, type="primary")
+    selected_date   = st.date_input("Date", value=date.today())
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
     # Leg 1
@@ -481,7 +482,7 @@ with st.sidebar:
     st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:10px;'>▸ SETTINGS</div>", unsafe_allow_html=True)
     multiplier      = st.number_input("Leg 2 Multiplier", value=3.3, step=0.1, min_value=0.1, key="mult")
     candle_interval = st.selectbox("Interval (min)", [1, 3, 5, 10, 15, 30, 60], index=2)
-    selected_date   = st.date_input("Date", value=date.today())
+    
     date_str        = selected_date.strftime("%Y-%m-%d")
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
