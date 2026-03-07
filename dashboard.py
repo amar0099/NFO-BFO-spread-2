@@ -449,7 +449,7 @@ st.markdown(f"""
 with st.sidebar:
     st.markdown("<div style='font-family:Syne;font-size:20px;font-weight:400;margin-bottom:4px;'>⚡ Spread Terminal</div><div style='font-size:11px;color:#94a3b8;margin-bottom:12px;font-family:Space Mono'>NFO / BFO Options</div>", unsafe_allow_html=True)
     fetch_btn = st.button("⟳  FETCH DATA", use_container_width=True, type="primary")
-    st.divider()
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
     # Leg 1
     st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:10px;'>▸ LEG 1 — BASE</div>", unsafe_allow_html=True)
