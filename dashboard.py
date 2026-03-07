@@ -698,7 +698,6 @@ else:
             spikecolor=T["text3"], spikethickness=1, spikedash="dot"
         ),
         hoverlabel=dict(bgcolor=T["card"], bordercolor=T["card_bdr"], font=dict(color=T["text"])),
-        dragmode="pan",
     )
     if show_diff:
         fig.update_yaxes(gridcolor=T["grid"], title_text="4 Leg", tickfont=dict(size=10),
