@@ -241,7 +241,7 @@ st.markdown(f"""
     }}
     section[data-testid="stSidebar"] * {{
         color: var(--text) !important;
-        font-size: 13px !important;
+        font-size: 10px !important;
     }}
     section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] > div,
     section[data-testid="stSidebar"] .stTextInput input,
