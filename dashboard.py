@@ -432,6 +432,8 @@ st.markdown(f"""
     div[data-testid="stDecoration"] {{ display: none; }}
     #MainMenu, footer {{ visibility: hidden; }}
     button[data-testid="collapsedControl"] {{ visibility: hidden; }}
+    button[data-testid="collapsedControl"] span {{ display: none; }}
+    [data-testid="collapsedControl"] {{ display: none !important; }}
     .block-container {{ padding-top: 1rem !important; }}
 </style>
 """, unsafe_allow_html=True)
