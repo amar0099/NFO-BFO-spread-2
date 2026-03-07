@@ -431,6 +431,7 @@ st.markdown(f"""
     .stDataFrame {{ border-radius: 10px; overflow: hidden; }}
     div[data-testid="stDecoration"] {{ display: none; }}
     #MainMenu, footer {{ visibility: hidden; }}
+    button[data-testid="collapsedControl"] {{ visibility: hidden; }}
     .block-container {{ padding-top: 1rem !important; }}
 </style>
 """, unsafe_allow_html=True)
