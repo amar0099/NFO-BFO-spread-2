@@ -454,7 +454,7 @@ with st.sidebar:
     # Leg 1
     st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:10px;'>▸ LEG 1 — BASE</div>", unsafe_allow_html=True)
     sensex_exchange   = st.selectbox("Exchange", ["BSE", "NSE"], index=0, key="sx_exch")
-    sensex_underlying = st.selectbox("Underlying", ["SENSEX", "BANKEX"], index=0, key="sx_under")
+    sensex_underlying = st.selectbox("Underlying", ["SENSEX", "BANKEX","NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"], index=0, key="sx_under")
     col1, col2 = st.columns(2)
     with col1: sensex_ce_expiry = st.text_input("CE Expiry", value="260312", key="sx_ce_exp", help="YYMMDD e.g. 260312")
     with col2: sensex_pe_expiry = st.text_input("PE Expiry", value="260312", key="sx_pe_exp")
@@ -467,7 +467,7 @@ with st.sidebar:
     # Leg 2
     st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:10px;'>▸ LEG 2 — HEDGE</div>", unsafe_allow_html=True)
     nifty_exchange   = st.selectbox("Exchange", ["NSE", "BSE"], index=0, key="nf_exch")
-    nifty_underlying = st.selectbox("Underlying", ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"], index=0, key="nf_under")
+    nifty_underlying = st.selectbox("Underlying", ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY","SENSEX", "BANKEX"], index=0, key="nf_under")
     col5, col6 = st.columns(2)
     with col5: nifty_ce_expiry = st.text_input("CE Expiry", value="260310", key="nf_ce_exp", help="YYMMDD e.g. 260310")
     with col6: nifty_pe_expiry = st.text_input("PE Expiry", value="260310", key="nf_pe_exp")
