@@ -529,6 +529,8 @@ import datetime as _dt
 _now = _dt.datetime.now().strftime("%H:%M:%S")
 _formula = f"{sensex_exchange}:{sensex_underlying} &minus; ({nifty_exchange}:{nifty_underlying} &times; {multiplier})"
 
+st.markdown("<div style='font-size:12px;font-weight:700;color:#0284c7;margin-bottom:4px;'>☰ Menu</div>", unsafe_allow_html=True)
+
 st.markdown(f"""
 <div class="top-nav">
     <div class="nav-brand">
