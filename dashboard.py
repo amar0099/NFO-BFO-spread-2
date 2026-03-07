@@ -431,17 +431,16 @@ st.markdown(f"""
     .stDataFrame {{ border-radius: 10px; overflow: hidden; }}
     div[data-testid="stDecoration"] {{ display: none; }}
     #MainMenu, footer {{ visibility: hidden; }}
-    button[data-testid="collapsedControl"] {{ visibility: visible !important; }}
+    button[data-testid="collapsedControl"] {{ visibility: visible !important; display: flex !important; align-items: center; }}
+    button[data-testid="collapsedControl"] span {{ display: none !important; }}
     button[data-testid="collapsedControl"]::after {{
-        content: " Menu";
+        content: "☰  Menu";
         font-family: "Syne", sans-serif;
         font-size: 13px;
         font-weight: 700;
         color: #0284c7;
-        margin-left: 4px;
+        letter-spacing: 0.3px;
     }}
-    button[data-testid="collapsedControl"] span {{ display: none; }}
-    [data-testid="collapsedControl"] {{ display: none !important; }}
     .block-container {{ padding-top: 0.5rem !important; }}
     header[data-testid="stHeader"] {{ background: transparent !important; }}
     header[data-testid="stHeader"] > * {{ display: none !important; }}
