@@ -448,6 +448,24 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<script>
+    window.addEventListener('load', function() {
+        setTimeout(function() {
+            var btn = document.querySelector('[data-testid="collapsedControl"]');
+            if (btn) {
+                btn.innerHTML = '☰ Menu';
+                btn.style.fontSize = '13px';
+                btn.style.fontWeight = '700';
+                btn.style.color = '#0284c7';
+                btn.style.fontFamily = 'Syne, sans-serif';
+                btn.style.padding = '6px 12px';
+            }
+        }, 500);
+    });
+</script>
+""", unsafe_allow_html=True)
+
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
