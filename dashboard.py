@@ -462,7 +462,7 @@ with st.sidebar:
     with col3: sensex_ce_strike = st.number_input("CE Strike", value=80000, step=100, key="sx_ce_str")
     with col4: sensex_pe_strike = st.number_input("PE Strike", value=80000, step=100, key="sx_pe_str")
 
-    st.divider()
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
     # Leg 2
     st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:10px;'>▸ LEG 2 — HEDGE</div>", unsafe_allow_html=True)
@@ -475,7 +475,7 @@ with st.sidebar:
     with col7: nifty_ce_strike = st.number_input("CE Strike", value=24800, step=50, key="nf_ce_str")
     with col8: nifty_pe_strike = st.number_input("PE Strike", value=24800, step=50, key="nf_pe_str")
 
-    st.divider()
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
     # Settings
     st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:10px;'>▸ SETTINGS</div>", unsafe_allow_html=True)
@@ -484,7 +484,7 @@ with st.sidebar:
     selected_date   = st.date_input("Date", value=date.today())
     date_str        = selected_date.strftime("%Y-%m-%d")
 
-    st.divider()
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
     show_diff    = st.checkbox("Show 4-Leg Chart", value=True)
     auto_refresh = st.checkbox("Auto Refresh", value=True)
