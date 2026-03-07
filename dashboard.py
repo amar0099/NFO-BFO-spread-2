@@ -432,8 +432,7 @@ st.markdown(f"""
     div[data-testid="stDecoration"] {{ display: none; }}
     #MainMenu, footer {{ visibility: hidden; }}
     button[data-testid="collapsedControl"] {{ display: none !important; }}
-    section[data-testid="stSidebar"] {{ min-width: 250px !important; max-width: 250px !important; overflow: visible !important; }}
-    section[data-testid="stSidebar"] > div {{ overflow: visible !important; }}
+    section[data-testid="stSidebar"] {{ min-width: 250px !important; max-width: 250px !important; }}
     .block-container {{ padding-top: 0.5rem !important; }}
     header[data-testid="stHeader"] {{ background: transparent !important; }}
     header[data-testid="stHeader"] > * {{ display: none !important; }}
