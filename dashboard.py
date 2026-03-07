@@ -433,7 +433,7 @@ st.markdown(f"""
     #MainMenu, footer {{ visibility: hidden; }}
     button[data-testid="collapsedControl"] {{ display: none !important; }}
     
-    section[data-testid="stSidebar"] {{ min-width: 280px !important; max-width: 280px !important; }}
+    section[data-testid="stSidebar"] {{ min-width: 380px !important; max-width: 380px !important; }}
     div[data-baseweb="popover"] {{ left: 0 !important; right: auto !important; }}
     div[data-baseweb="calendar"] {{ left: 0 !important; right: auto !important; }}
     
