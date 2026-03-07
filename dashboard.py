@@ -454,7 +454,16 @@ st.markdown(f"""
 with st.sidebar:
     st.markdown("<div style='font-family:Syne;font-size:20px;font-weight:400;margin-bottom:4px;'>⚡ Spread Terminal</div><div style='font-size:11px;color:#94a3b8;margin-bottom:12px;font-family:Space Mono'>NFO / BFO Options</div>", unsafe_allow_html=True)
     fetch_btn = st.button("⟳  FETCH DATA", use_container_width=True, type="primary")
-    selected_date   = st.date_input("Date", value=date.today())
+    
+    today = date.today()
+    if today.weekday() == 5:      # Saturday
+        default_date = today - pd.Timedelta(days=1)
+    elif today.weekday() == 6:    # Sunday
+        default_date = today - pd.Timedelta(days=2)
+    else:
+        default_date = today
+    selected_date = st.date_input("Date", value=default_date)
+    
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
     # Leg 1
