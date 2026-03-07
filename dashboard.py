@@ -431,7 +431,15 @@ st.markdown(f"""
     .stDataFrame {{ border-radius: 10px; overflow: hidden; }}
     div[data-testid="stDecoration"] {{ display: none; }}
     #MainMenu, footer {{ visibility: hidden; }}
-    button[data-testid="collapsedControl"] {{ visibility: hidden; }}
+    button[data-testid="collapsedControl"] {{ visibility: visible !important; }}
+    button[data-testid="collapsedControl"]::after {{
+        content: " Menu";
+        font-family: "Syne", sans-serif;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0284c7;
+        margin-left: 4px;
+    }}
     button[data-testid="collapsedControl"] span {{ display: none; }}
     [data-testid="collapsedControl"] {{ display: none !important; }}
     .block-container {{ padding-top: 1rem !important; }}
