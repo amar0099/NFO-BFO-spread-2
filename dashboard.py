@@ -447,7 +447,7 @@ st.markdown(f"""
 # ─────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("<div style='font-family:Syne;font-size:20px;font-weight:800;margin-bottom:4px;'>⚡ Spread Terminal</div><div style='font-size:11px;color:#94a3b8;margin-bottom:12px;font-family:Space Mono'>NFO / BFO Options</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-family:Syne;font-size:20px;font-weight:400;margin-bottom:4px;'>⚡ Spread Terminal</div><div style='font-size:11px;color:#94a3b8;margin-bottom:12px;font-family:Space Mono'>NFO / BFO Options</div>", unsafe_allow_html=True)
     fetch_btn = st.button("⟳  FETCH DATA", use_container_width=True, type="primary")
     st.divider()
 
