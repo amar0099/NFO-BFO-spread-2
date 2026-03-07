@@ -529,7 +529,28 @@ import datetime as _dt
 _now = _dt.datetime.now().strftime("%H:%M:%S")
 _formula = f"{sensex_exchange}:{sensex_underlying} &minus; ({nifty_exchange}:{nifty_underlying} &times; {multiplier})"
 
-st.markdown("<div style='font-size:12px;font-weight:700;color:#0284c7;margin-bottom:4px;'>☰ Menu</div>", unsafe_allow_html=True)
+# ─────────────────────────────────────────────
+# MENU
+# ─────────────────────────────────────────────
+
+import streamlit.components.v1 as components
+components.html("""
+<button onclick="
+    var btn = window.parent.document.querySelector('[data-testid=collapsedControl]');
+    if(btn) btn.click();
+" style="
+    background:none;
+    border:none;
+    cursor:pointer;
+    font-size:13px;
+    font-weight:700;
+    color:#0284c7;
+    font-family:Syne,sans-serif;
+    padding:4px 8px;
+    border-radius:6px;
+    letter-spacing:0.3px;
+">☰ &nbsp;Menu</button>
+""", height=35)
 
 st.markdown(f"""
 <div class="top-nav">
