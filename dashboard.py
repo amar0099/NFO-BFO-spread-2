@@ -226,8 +226,8 @@ st.markdown(f"""
         --divider: {T["divider"]};
     }}
 
-    * {{ font-family: "Syne", sans-serif !important; }}
-    code, .mono {{ font-family: "Space Mono", monospace !important; }}
+    * {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; }}
+    code, .mono {{ font-family: "Courier New", monospace !important; }}
 
     .stApp {{
         background: var(--bg) !important;
