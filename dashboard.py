@@ -465,8 +465,15 @@ import datetime as _dt
 _now = _dt.datetime.now().strftime("%H:%M:%S")
 
 
-st.markdown(f"""
+nav_col, btn_col = st.columns([11, 1])
+with btn_col:
+    if st.button("🔄", key="refresh_token_nav", help="Refresh Fyers Token"):
+        get_shared_token.clear()
+        st.rerun()
+with nav_col:
+ st.markdown(f"""
 <div class="top-nav">
+
     <div class="nav-brand">
         <div class="nav-logo">📊</div>
         <div>
@@ -696,11 +703,7 @@ with tab1:
     with r0[3]: show_diff      = st.checkbox("4-Leg Chart", value=True, key="show_diff")
     with r0[4]: auto_refresh   = st.checkbox("Auto Refresh", value=True, key="auto_ref")
     with r0[5]: refresh_secs   = st.slider("Refresh (sec)", 5, 60, REFRESH_SECONDS, key="ref_sec")
-    with r0[6]:
-        st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
-        if st.button("🔄 Refresh Token", use_container_width=True, key="refresh_token"):
-            get_shared_token.clear()
-            st.rerun()
+    with r0[6]: st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
     with r0[7]: fetch_btn      = st.button("⟳  FETCH DATA", use_container_width=True, type="primary", key="fetch_btn")
 
     date_str = selected_date.strftime("%Y-%m-%d")
