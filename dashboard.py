@@ -431,7 +431,10 @@ st.markdown(f"""
     .stMarkdown p {{ color: var(--text2); }}
     .stDataFrame {{ border-radius: 10px; overflow: hidden; }}
     div[data-testid="stDecoration"] {{ display: none; }}
-    #MainMenu, footer {{ visibility: hidden; }}
+    
+    div[data-testid="stVerticalBlock"] > div {{ gap: 0rem !important; }}
+    .stSelectbox, .stTextInput, .stNumberInput {{ margin-bottom: -18px !important; }}
+    
     button[data-testid="collapsedControl"] {{ display: none !important; }}
     
     section[data-testid="stSidebar"] {{ min-width: 380px !important; max-width: 380px !important; }}
