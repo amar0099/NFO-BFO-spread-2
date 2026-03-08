@@ -554,7 +554,7 @@ if "df_custom" not in st.session_state:
 # TABS
 # ─────────────────────────────────────────────
 
-tab1, tab2 = st.tabs(["📊 Spread Dashboard", "🧮 Custom 4-Leg Builder"])
+tab1, tab2 = st.tabs(["📊 Spread Dashboard", "🧮 Butterfly"])
 
 # ─────────────────────────────────────────────
 # TAB 2 — CUSTOM 4-LEG BUILDER
