@@ -566,7 +566,7 @@ with tab2:
     leg_configs = []
 
     for i in range(4):
-        st.markdown(f"<div style='font-size:11px;font-weight:700;color:{leg_colors[i]};margin:6px 0 4px 0;'>▸ {leg_labels[i]}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:11px;font-weight:700;color:{leg_colors[i]};margin:2px 0 0px 0;'>▸ {leg_labels[i]}</div>", unsafe_allow_html=True)
         cols = st.columns([1, 1.4, 1, 1, 1.2, 0.9])
         with cols[0]: exch     = st.selectbox("Exchange",    ["BSE","NSE"],     index=0,                   key=f"c_exch_{i}")
         with cols[1]: under    = st.selectbox("Underlying",  UNDERLYINGS,       index=i%2,                 key=f"c_under_{i}")
