@@ -594,7 +594,7 @@ with tab2:
         cols = st.columns([1, 1.4, 1, 1, 1.2, 0.9])
         with cols[0]: exch     = st.selectbox("Exchange",    ["BSE","NSE"],     index=0,                   key=f"c_exch_{i}")
         with cols[1]: under    = st.selectbox("Underlying",  UNDERLYINGS,       index=i%2,                 key=f"c_under_{i}")
-        with cols[2]: expiry   = st.text_input("Expiry",     value="260312",                               key=f"c_exp_{i}", help="YYMMDD or 2026MAR")
+        with cols[2]: expiry   = st.text_input("Expiry",     value="260312",                               key=f"c_exp_{i}", help="YYMMDD or 26MAR")
         with cols[3]: strike   = st.number_input("Strike",   value=80000 if i<2 else 24800,               key=f"c_str_{i}", step=100)
         with cols[4]: opt_type = st.selectbox("CE / PE",    ["CE","PE"],        index=i%2,                 key=f"c_opt_{i}")
         with cols[5]: mult     = st.number_input("Multiplier", value=1.0, min_value=0.1, step=0.1,        key=f"c_lots_{i}")
