@@ -570,7 +570,7 @@ if "df_custom" not in st.session_state:
 # TABS
 # ─────────────────────────────────────────────
 
-tab1, tab2, tab3 = st.tabs(["📊 Spread Dashboard", "🧮 Butterfly", "📐 IV Analysis"])
+, tab2, tab3 = st.tabs(["📊 Spread Dashboard", "🧮 Butterfly", "📐 IV Analysis"])
 
 # ─────────────────────────────────────────────
 # TAB 2 — CUSTOM 4-LEG BUILDER
@@ -894,11 +894,26 @@ with tab1:
         synth_row = (3 if show_diff else 2) if has_synth else None
 
         fig.add_trace(go.Scatter(x=df.index, y=df["ce_spread"], name="CE Spread", line=dict(color="#ff4444", width=2), hovertemplate="%{x|%H:%M}<br>CE: %{y:.2f}<extra></extra>"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["pe_spread"], name="PE Spread",
-            line=dict(color="#44ff88", width=2),
-            hovertemplate="%{x|%H:%M}<br>PE: %{y:.2f}<extra></extra>"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["pe_spread"], name="PE Spread", line=dict(color="#44ff88", width=2), hovertemplate="%{x|%H:%M}<br>PE: %{y:.2f}<extra></extra>"), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=pd.concat([df.index.to_series(), df.index.to_series()[::-1]]).values,
+            y=pd.concat([df["ce_spread"], df["pe_spread"][::-1]]).values,
+            fill="toself", fillcolor="rgba(255,100,100,0.07)",
+            line=dict(color="rgba(0,0,0,0)"), showlegend=False, hoverinfo="skip"
+        ), row=1, col=1)
+        fig.add_hline(y=0, line_dash="dash", line_color="#444", row=1, col=1)
+
         if show_diff:
             fig.add_trace(go.Scatter(x=df.index, y=df["diff"], name="4 Leg", line=dict(color="#ffaa00", width=2), hovertemplate="%{x|%H:%M}<br>4 Leg: %{y:.2f}<extra></extra>"), row=diff_row, col=1)
+            fig.add_hline(y=0, line_dash="dash", line_color="#444", row=diff_row, col=1)
+            diff_high = df["diff"].max()
+            diff_low  = df["diff"].min()
+            fig.add_hline(y=diff_high, line_dash="dot", line_color="#ffaa00", line_width=1, opacity=0.5,
+                annotation_text=f"H: {diff_high:.0f}", annotation_position="right",
+                annotation_font=dict(color="#ffaa00", size=10), row=diff_row, col=1)
+            fig.add_hline(y=diff_low, line_dash="dot", line_color="#ffaa00", line_width=1, opacity=0.5,
+                annotation_text=f"L: {diff_low:.0f}", annotation_position="right",
+                annotation_font=dict(color="#ffaa00", size=10), row=diff_row, col=1)
 
         if has_synth:
             fig.add_trace(go.Scatter(
@@ -906,6 +921,14 @@ with tab1:
                 line=dict(color="#818cf8", width=2),
                 hovertemplate="%{x|%H:%M}<br>Synth: %{y:.4f}<extra></extra>"
             ), row=synth_row, col=1)
+            ratio_high = df["synth_ratio"].max()
+            ratio_low  = df["synth_ratio"].min()
+            fig.add_hline(y=ratio_high, line_dash="dot", line_color="#818cf8", line_width=1, opacity=0.5,
+                annotation_text=f"H: {ratio_high:.4f}", annotation_position="right",
+                annotation_font=dict(color="#818cf8", size=10), row=synth_row, col=1)
+            fig.add_hline(y=ratio_low, line_dash="dot", line_color="#818cf8", line_width=1, opacity=0.5,
+                annotation_text=f"L: {ratio_low:.4f}", annotation_position="right",
+                annotation_font=dict(color="#818cf8", size=10), row=synth_row, col=1)
 
         fig.update_layout(
             height=580 + (120 if has_synth else 0),
@@ -933,7 +956,6 @@ with tab1:
         st.plotly_chart(fig, use_container_width=True)
         if st.session_state.get("spot_debug"):
             st.warning(f"⚠️ Spot debug: {st.session_state['spot_debug']}")
-
 
 
     # ─────────────────────────────────────────────
