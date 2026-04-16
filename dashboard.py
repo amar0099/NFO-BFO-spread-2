@@ -5,6 +5,7 @@
 
 import os
 import base64
+import hashlib
 import pyotp
 import requests
 import pandas as pd
@@ -18,6 +19,7 @@ import numpy as np
 from scipy.stats import norm
 from scipy.optimize import brentq
 from fyers_apiv3 import fyersModel
+
 
 # ─────────────────────────────────────────────
 # CONFIG — edit these or set as env variables
@@ -43,25 +45,16 @@ def get_secret(key):
 def b64(value):
     return base64.b64encode(str(value).encode()).decode()
 
-def generate_token():
-    client_id  = get_secret("FYERS_CLIENT_ID")
-    secret_key = get_secret("FYERS_SECRET_KEY")
-    username   = get_secret("FYERS_USERNAME")
-    pin        = get_secret("FYERS_PIN")
-    totp_key   = get_secret("FYERS_TOTP_KEY")
+def generate_token(client_id, secret_key, username, pin, totp_key):
+    """All credentials passed explicitly — never reads st.secrets inside cached context."""
     redirect_uri = "http://127.0.0.1:8080/"
-
-    missing = [k for k, v in {
-        "FYERS_CLIENT_ID": client_id, "FYERS_SECRET_KEY": secret_key,
-        "FYERS_USERNAME": username, "FYERS_PIN": pin, "FYERS_TOTP_KEY": totp_key,
-    }.items() if not v]
-    if missing:
-        return None, f"Missing credentials: {', '.join(missing)}"
 
     try:
         s = requests.Session()
         r1 = s.post("https://api-t2.fyers.in/vagator/v2/send_login_otp_v2",
                     json={"fy_id": b64(username), "app_id": "2"}, timeout=10)
+        if r1.status_code == 429:
+            return None, "Rate limited by Fyers (429). Wait ~60s then click Refresh Token."
         try:
             r1d = r1.json()
         except Exception:
@@ -92,17 +85,33 @@ def generate_token():
         if r4d.get("s") != "ok":
             return None, f"Step 4 failed: {r4d}"
 
-        auth_code = parse_qs(urlparse(r4d["Url"]).query).get("auth_code", [None])[0]
-        if not auth_code:
-            return None, f"No auth_code in: {r4d}"
-
-        session = fyersModel.SessionModel(
-            client_id=client_id, secret_key=secret_key,
-            redirect_uri=redirect_uri, response_type="code", grant_type="authorization_code"
+        data = r4d.get("data", {})
+        auth_code = (
+            data.get("auth")
+            or parse_qs(urlparse(r4d.get("Url", "")).query).get("auth_code", [None])[0]
+            or parse_qs(urlparse(data.get("url", "")).query).get("auth_code", [None])[0]
         )
-        session.set_token(auth_code)
-        r5d = session.generate_token()
+        if not auth_code:
+            return None, f"Step 4: no auth_code in response: {r4d}"
+
+        # New Fyers API: exchange auth_code via validate-authcode using SHA-256 app hash
+        app_id_hash = hashlib.sha256(f"{app_id}:{secret_key}".encode()).hexdigest()
+        r5 = s.post("https://api-t1.fyers.in/api/v3/validate-authcode", json={
+            "grant_type": "authorization_code",
+            "appIdHash": app_id_hash,
+            "code": auth_code,
+        }, timeout=10)
+        r5d = r5.json()
         token = r5d.get("access_token")
+        if not token:
+            # Fallback: try legacy SDK exchange
+            session = fyersModel.SessionModel(
+                client_id=client_id, secret_key=secret_key,
+                redirect_uri=redirect_uri, response_type="code", grant_type="authorization_code"
+            )
+            session.set_token(auth_code)
+            r5d = session.generate_token()
+            token = r5d.get("access_token")
         if not token:
             return None, f"Step 5 failed: {r5d}"
         return token, None
@@ -121,30 +130,53 @@ def load_fyers_from_file():
     return fyersModel.FyersModel(client_id=get_secret("FYERS_CLIENT_ID") or CLIENT_ID, token=token, log_path="")
 
 @st.cache_resource
-def get_shared_token():
-    """Generates token once — shared across ALL browser sessions on this server."""
-    # Try local token file first (local PC)
+def _cached_generate_token(client_id, secret_key, username, pin, totp_key):
+    """Cached token generator. Args are passed explicitly so st.secrets is read
+    in normal Streamlit context (not inside cache thread where it silently fails).
+    Returns (token_or_None, error_or_None) — caches failures too to stop retry storm."""
+    # Try persisted token file first (avoids login on warm restarts)
     try:
         with open(TOKEN_FILE) as f:
             token = f.read().strip()
         if token:
-            return token
+            return token, None
     except FileNotFoundError:
         pass
     # Auto-generate via TOTP
-    token, error = generate_token()
+    token, error = generate_token(client_id, secret_key, username, pin, totp_key)
     if token:
-        return token
-    raise RuntimeError(f"Fyers login failed: {error}")
+        try:
+            with open(TOKEN_FILE, "w") as f:
+                f.write(token)
+        except Exception:
+            pass
+        return token, None
+    return None, error  # cached failure — stops retry storm
+
+def get_shared_token():
+    """Reads secrets in Streamlit context, then calls the cached generator."""
+    client_id  = get_secret("FYERS_CLIENT_ID")
+    secret_key = get_secret("FYERS_SECRET_KEY")
+    username   = get_secret("FYERS_USERNAME")
+    pin        = get_secret("FYERS_PIN")
+    totp_key   = get_secret("FYERS_TOTP_KEY")
+
+    missing = [k for k, v in {
+        "FYERS_CLIENT_ID": client_id, "FYERS_SECRET_KEY": secret_key,
+        "FYERS_USERNAME": username, "FYERS_PIN": pin, "FYERS_TOTP_KEY": totp_key,
+    }.items() if not v]
+    if missing:
+        return None, f"Missing credentials: {', '.join(missing)}"
+
+    return _cached_generate_token(client_id, secret_key, username, pin, totp_key)
 
 def get_fyers_client():
-    try:
-        token = get_shared_token()
-        cid = get_secret("FYERS_CLIENT_ID") or CLIENT_ID
-        return fyersModel.FyersModel(client_id=cid, token=token, log_path="")
-    except Exception as e:
-        st.error(f"❌ Login failed: {e}")
+    token, error = get_shared_token()
+    if not token:
+        st.error(f"❌ Login failed: {error}")
         return None
+    cid = get_secret("FYERS_CLIENT_ID") or CLIENT_ID
+    return fyersModel.FyersModel(client_id=cid, token=token, log_path="")
 
 # ─────────────────────────────────────────────
 # EXPIRY FETCHER — cached per token
@@ -161,17 +193,38 @@ _UNDERLYING_SYM = {
 
 _MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]
 
+EXPIRY_CACHE_FILE = "expiry_cache.json"
+
+def _load_expiry_cache():
+    """Load today's expiry cache from file. Returns {} if missing or stale."""
+    try:
+        import json
+        with open(EXPIRY_CACHE_FILE) as f:
+            data = json.load(f)
+        if data.get("date") == date.today().isoformat():
+            return data.get("expiries", {})
+    except Exception:
+        pass
+    return {}
+
+def _save_expiry_cache(expiries: dict):
+    """Persist expiries to file with today's date stamp."""
+    import json
+    try:
+        with open(EXPIRY_CACHE_FILE, "w") as f:
+            json.dump({"date": date.today().isoformat(), "expiries": expiries}, f)
+    except Exception:
+        pass
+
 @st.cache_resource
-@st.cache_resource
-def fetch_expiries_for(token, fyers_sym):
-    """Returns dict: {label: fyers_code}. Cached per (token, sym)."""
+def _fetch_expiries_from_fyers(client_id, token, fyers_sym):
+    """Hits Fyers option chain API. Returns (dict, error_str)."""
     from collections import defaultdict
     try:
-        cid = get_secret("FYERS_CLIENT_ID") or CLIENT_ID
-        fyers = fyersModel.FyersModel(client_id=cid, token=token, log_path="")
+        fyers = fyersModel.FyersModel(client_id=client_id, token=token, log_path="")
         resp = fyers.optionchain(data={"symbol": fyers_sym, "strikecount": 1, "timestamp": ""})
         if not (resp and resp.get("s") == "ok"):
-            return {}
+            return {}, f"optionchain API returned: {resp}"
         raw = resp.get("data", {}).get("expiryData", [])
 
         parsed = []
@@ -187,7 +240,6 @@ def fetch_expiries_for(token, fyers_sym):
             mon = _MONTHS[mm - 1]
             parsed.append((yy, mm, dd, mon))
 
-        # Last expiry of each month = monthly
         by_month = defaultdict(list)
         for yy, mm, dd, mon in parsed:
             by_month[(yy, mm)].append(dd)
@@ -197,22 +249,40 @@ def fetch_expiries_for(token, fyers_sym):
         for yy, mm, dd, mon in parsed:
             is_monthly = (dd == last_of_month[(yy, mm)])
             if is_monthly:
-                code  = f"{yy:02d}{mon}"           # 26MAR
+                code  = f"{yy:02d}{mon}"
                 label = f"{dd:02d} {mon} {yy:02d} (M)"
             else:
-                code  = f"{yy:02d}{mm:02d}{dd:02d}"  # 260325 zero-padded
+                code  = f"{yy:02d}{mm:02d}{dd:02d}"
                 label = f"{dd:02d} {mon} {yy:02d} (W)"
             result[label] = code
-        return result
-    except Exception:
-        return {}
+        return result, None
+    except Exception as e:
+        return {}, str(e)
 
 def get_expiries_for(exchange, underlying):
+    """Returns expiry dict — served from daily file cache; hits Fyers only once per day."""
+    sym = _UNDERLYING_SYM.get(underlying.upper(), f"{exchange}:{underlying}-INDEX")
+
+    # 1. Try today's file cache (survives server restarts)
+    cached = _load_expiry_cache()
+    if cached.get(sym):
+        return cached[sym]
+
+    # 2. Fetch from Fyers (cached in memory for this server process)
     try:
-        token = get_shared_token()
-        sym   = _UNDERLYING_SYM.get(underlying.upper(), f"{exchange}:{underlying}-INDEX")
-        return fetch_expiries_for(token, sym)  # returns {label: code}
-    except Exception:
+        token, _ = get_shared_token()
+        if not token:
+            return {}
+        cid = get_secret("FYERS_CLIENT_ID") or CLIENT_ID
+        result, err = _fetch_expiries_from_fyers(cid, token, sym)
+        if result:
+            cached[sym] = result
+            _save_expiry_cache(cached)
+        else:
+            st.warning(f"⚠️ Expiry fetch failed for `{sym}`: {err}")
+        return result
+    except Exception as e:
+        st.warning(f"⚠️ Expiry fetch exception for `{sym}`: {e}")
         return {}
 
 def expiry_selectbox(label, opts_dict, manual_key, select_key, default_manual):
@@ -564,8 +634,36 @@ _now = _dt.datetime.now().strftime("%H:%M:%S")
 
 
 if st.button("🔄 Refresh Token", key="refresh_token_nav", help="Clear cached token and re-authenticate"):
-    get_shared_token.clear()
+    _cached_generate_token.clear()
+    _fetch_expiries_from_fyers.clear()
+    try:
+        os.remove(TOKEN_FILE)
+    except FileNotFoundError:
+        pass
     st.rerun()
+
+# Show login status banner if token failed
+_tok, _tok_err = get_shared_token()
+if not _tok:
+    if _tok_err and "Missing credentials" in _tok_err:
+        st.error(
+            f"❌ **Fyers credentials not configured.**\n\n"
+            f"{_tok_err}\n\n"
+            f"**On Streamlit Cloud:** Go to your app → ⋮ menu → **Settings → Secrets** and add:\n"
+            f"```\n"
+            f"FYERS_CLIENT_ID = \"XXXX-100\"\n"
+            f"FYERS_SECRET_KEY = \"your_secret\"\n"
+            f"FYERS_USERNAME = \"your_fy_id\"\n"
+            f"FYERS_PIN = \"your_pin\"\n"
+            f"FYERS_TOTP_KEY = \"your_totp_base32_key\"\n"
+            f"```\n"
+            f"After saving secrets, click **Refresh Token**."
+        )
+    elif _tok_err and "429" in _tok_err:
+        st.error(f"❌ **Rate limited by Fyers.** Wait ~60 seconds then click **Refresh Token**.")
+    else:
+        st.error(f"❌ Login failed: {_tok_err}")
+    st.stop()
 
 st.markdown(f"""
 <div class="top-nav">
@@ -697,10 +795,10 @@ with tab2:
     bse_exp = next_weekday_str(3)  # Thursday
 
     LEG_DEFAULTS = [
-        ("BSE", "SENSEX",  nse_exp, 80000, "CE", 3.3),
-        ("NSE", "NIFTY", bse_exp, 24200, "CE", 1.0),
-        ("BSE", "SENSEX", bse_exp, 80000, "CE", 3.3),
-        ("NSE", "NIFTY",  nse_exp, 24200, "CE", 1.0),
+        ("BSE", "SENSEX",  nse_exp, 80000, "CE", 1.0),
+        ("NSE", "NIFTY", bse_exp, 24200, "CE", 3.3),
+        ("BSE", "SENSEX", bse_exp, 80000, "CE", 1.0),
+        ("NSE", "NIFTY",  nse_exp, 24200, "CE", 3.3),
     ]
 
     if "c_defaults_set" not in st.session_state:
