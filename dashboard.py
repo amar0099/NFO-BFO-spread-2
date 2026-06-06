@@ -764,6 +764,8 @@ if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame()
 if "df_custom" not in st.session_state:
     st.session_state.df_custom = pd.DataFrame()
+if "df_bfly8" not in st.session_state:
+    st.session_state.df_bfly8 = pd.DataFrame()
 
 # ─────────────────────────────────────────────
 # TABS
