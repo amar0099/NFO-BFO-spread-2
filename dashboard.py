@@ -769,7 +769,7 @@ if "df_custom" not in st.session_state:
 # TABS
 # ─────────────────────────────────────────────
 
-tab1, tab2, tab3 = st.tabs(["📊 Spread Dashboard", "🧮 Butterfly", "📐 IV Analysis"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Spread Dashboard", "🧮 Butterfly", "🦋 Butterfly Straddle", "📐 IV Analysis"])
 
 # ─────────────────────────────────────────────
 # TAB 2 — CUSTOM 4-LEG BUILDER
@@ -981,6 +981,218 @@ with tab2:
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("👆 Configure your 4 legs above and click **Fetch 4-Leg Data**.")
+
+with tab4:
+    st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:8px;'>Configure 8 Legs</div>", unsafe_allow_html=True)
+
+    UNDERLYINGS = ["SENSEX", "BANKEX", "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+    leg_colors  = ["#f87171","#34d399","#60a5fa","#fbbf24","#f472b6","#22d3ee","#a78bfa","#fb923c"]
+    leg_labels  = ["Leg 1","Leg 2","Leg 3","Leg 4","Leg 5","Leg 6","Leg 7","Leg 8"]
+    leg_configs = []
+
+    # ── Next Tuesday (NSE) and next Thursday (BSE) expiry ──
+    def next_weekday_str(weekday):
+        d = date.today()
+        days_ahead = weekday - d.weekday()
+        if days_ahead <= 0:
+            days_ahead += 7
+        return (d + pd.Timedelta(days=days_ahead)).strftime("%y%m%d")
+
+    nse_exp = next_weekday_str(1)  # Tuesday
+    bse_exp = next_weekday_str(3)  # Thursday
+
+    LEG_DEFAULTS = [
+        ("BSE", "SENSEX",  nse_exp, 80000, "CE", 1.0),
+        ("NSE", "NIFTY", bse_exp, 24200, "CE", 3.3),
+        ("BSE", "SENSEX", bse_exp, 80000, "CE", 1.0),
+        ("NSE", "NIFTY",  nse_exp, 24200, "CE", 3.3),
+        ("BSE", "SENSEX",  nse_exp, 80000, "CE", 1.0),
+        ("NSE", "NIFTY", bse_exp, 24200, "CE", 3.3),
+        ("BSE", "SENSEX", bse_exp, 80000, "CE", 1.0),
+        ("NSE", "NIFTY",  nse_exp, 24200, "CE", 3.3),
+    ]
+
+    if "b8_defaults_set" not in st.session_state:
+        for i, (ex, un, ep, st_, ot, mu) in enumerate(LEG_DEFAULTS):
+            st.session_state[f"b8_exch_{i}"]  = ex
+            st.session_state[f"b8_under_{i}"] = un
+            st.session_state[f"b8_exp_{i}"]   = ep
+            st.session_state[f"b8_str_{i}"]   = float(st_)
+            st.session_state[f"b8_opt_{i}"]   = ot
+            st.session_state[f"b8_lots_{i}"]  = mu
+        st.session_state["b8_defaults_set"] = True
+
+    b8_row = st.columns([1.2, 1, 1, 1, 1.5])
+    with b8_row[0]: custom_date     = st.date_input("Date",       value=default_date,           key="b8_date")
+    with b8_row[1]: custom_interval = st.selectbox("Interval",    [1,3,5,10,15,30,60], index=2, key="b8_interval")
+    with b8_row[2]: b8_auto          = st.checkbox("Auto Refresh", value=False,                  key="b8_auto_refresh")
+    with b8_row[3]: b8_secs          = st.slider("Sec", 5, 60, 10,                               key="b8_refresh_secs")
+    with b8_row[4]: custom_fetch    = st.button("⟳  FETCH 4-LEG DATA", type="primary", use_container_width=True, key="b8_fetch")
+
+    # All 4 legs on 2 rows (2 legs per row), same style as Tab 1
+    for row_idx in range(4):
+        legs_in_row = [row_idx * 2, row_idx * 2 + 1]
+        cols = st.columns([0.25, 0.5, 0.8, 0.8, 0.65, 0.65, 0.6, 0.15,
+                           0.25, 0.5, 0.8, 0.8, 0.65, 0.65, 0.6])
+        for j, i in enumerate(legs_in_row):
+            d_exch, d_under, d_exp, d_str, d_opt, d_mult = LEG_DEFAULTS[i]
+            exch_opts = ["NSE","BSE"] if d_exch == "NSE" else ["BSE","NSE"]
+            und_opts  = [d_under] + [u for u in UNDERLYINGS if u != d_under]
+            off = j * 8  # column offset for second leg
+            cols[off].markdown(f"<div style='padding-top:28px;font-size:10px;font-weight:700;color:{leg_colors[i]};'>{leg_labels[i].upper()}</div>", unsafe_allow_html=True)
+            with cols[off+1]: exch  = st.selectbox("Exchange",   exch_opts, key=f"b8_exch_{i}")
+            with cols[off+2]: under = st.selectbox("Underlying", und_opts,  key=f"b8_under_{i}")
+            _exp_opts = get_expiries_for(exch, under)
+            with cols[off+3]: expiry   = expiry_selectbox("Expiry", _exp_opts, f"b8_exp_man_{i}", f"b8_exp_sel_{i}", d_exp)
+            with cols[off+4]: strike   = st.number_input("Strike",   step=100,              key=f"b8_str_{i}")
+            with cols[off+5]: opt_type = st.selectbox("CE/PE",      ["CE","PE"],            key=f"b8_opt_{i}")
+            with cols[off+6]: mult     = st.number_input("Mult",     min_value=0.1, step=0.1, key=f"b8_lots_{i}")
+            if j == 0:
+                cols[7].markdown("<div style='padding-top:28px;font-size:10px;color:#e2e8f0;text-align:center;'>│</div>", unsafe_allow_html=True)
+            leg_configs.append({"exchange": exch, "underlying": under, "expiry": expiry,
+                                "strike": int(strike), "opt_type": opt_type, "lots": mult})
+
+    
+
+    custom_date_str = custom_date.strftime("%Y-%m-%d")
+
+    L = leg_configs
+    def leg_name(i): return f"{L[i]['lots']}×{L[i]['underlying']} {L[i]['opt_type']}"
+    st.markdown(f"""
+    <div style='font-size:11px;color:#64748b;margin:4px 0 8px 0;font-family:monospace;'>
+        Chart 1: &nbsp;<span style='color:#f87171'>{leg_name(0)}</span> − <span style='color:#34d399'>{leg_name(1)}</span>
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        <span style='color:#60a5fa'>{leg_name(2)}</span> − <span style='color:#fbbf24'>{leg_name(3)}</span>
+        &nbsp;&nbsp;&nbsp;&nbsp;
+        Chart 2: &nbsp;(Leg1−Leg2) + (Leg3−Leg4)
+    </div>
+    """, unsafe_allow_html=True)
+
+    if custom_fetch:
+        fyers = get_fyers_client()
+        if fyers is None:
+            st.error("Not connected to Fyers.")
+        else:
+            raw_series = []
+            ok = True
+            with st.spinner("Fetching 8-leg data..."):
+                for i, leg in enumerate(leg_configs):
+                    sym = build_symbol(leg["exchange"], leg["underlying"], leg["expiry"], leg["opt_type"][0], leg["strike"])
+                    df_leg = fetch_candles(fyers, sym, custom_interval, custom_date_str)
+                    if df_leg.empty:
+                        st.warning(f"⚠️ {leg_labels[i]}: No data for `{sym}`")
+                        ok = False
+                        break
+                    df_leg = df_leg[~df_leg.index.duplicated(keep="last")]
+                    raw_series.append(df_leg["close"] * leg["lots"])
+
+            if ok and len(raw_series) == 8:
+                base_idx = raw_series[0].index
+                s = [sr.reindex(base_idx, method="ffill").fillna(0) for sr in raw_series]
+                spread12 = (s[0]-s[1]) + (s[2]-s[3])
+                spread34 = (s[4]-s[5]) + (s[6]-s[7])
+                combined = spread12 + spread34
+                st.session_state.df_bfly8 = pd.DataFrame({
+                    "spread12": spread12,
+                    "spread34": spread34,
+                    "combined": combined,
+                })
+
+    df_bfly8 = st.session_state.df_bfly8
+
+    if not df_bfly8.empty:
+        _s12  = df_bfly8['spread12'].iloc[-1]
+        _s34  = df_bfly8['spread34'].iloc[-1]
+        _comb = df_bfly8['combined'].iloc[-1]
+        _s12_d  = _s12  - df_bfly8['spread12'].iloc[-2] if len(df_bfly8) > 1 else 0
+        _s34_d  = _s34  - df_bfly8['spread34'].iloc[-2] if len(df_bfly8) > 1 else 0
+        _comb_d = _comb - df_bfly8['combined'].iloc[-2] if len(df_bfly8) > 1 else 0
+        _updated = df_bfly8.index[-1].strftime("%H:%M:%S")
+
+        def _darrow(v):
+            arrow = "▲" if v >= 0 else "▼"
+            color = "#f87171" if v >= 0 else "#34d399"
+            return f"<span style='color:{color};font-size:11px;'>{arrow} {abs(v):.2f}</span>"
+
+        st.markdown(f"""
+        <div class="metrics-grid">
+            <div class="metric-card card-ce">
+                <div class="metric-badge">📊</div>
+                <div class="metric-label">LEG 1 − LEG 2</div>
+                <div class="metric-value val-ce">{_s12:+.1f}</div>
+                <div class="metric-sub">Spread &nbsp; {_darrow(_s12_d)}</div>
+            </div>
+            <div class="metric-card card-pe">
+                <div class="metric-badge">📊</div>
+                <div class="metric-label">LEG 3 − LEG 4</div>
+                <div class="metric-value val-pe">{_s34:+.1f}</div>
+                <div class="metric-sub">Spread &nbsp; {_darrow(_s34_d)}</div>
+            </div>
+            <div class="metric-card card-diff">
+                <div class="metric-badge">⚖️</div>
+                <div class="metric-label">4 LEG TOTAL</div>
+                <div class="metric-value val-diff">{_comb:+.1f}</div>
+                <div class="metric-sub">(Leg1−Leg2) + (Leg3−Leg4) &nbsp; {_darrow(_comb_d)}</div>
+            </div>
+            <div class="metric-card card-time">
+                <div class="metric-badge">🕐</div>
+                <div class="metric-label">LAST UPDATE</div>
+                <div class="metric-value val-time">{_updated}</div>
+                <div class="metric-sub">{len(df_bfly8)} candles</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        def make_hlines(fig, series, colors):
+            h, l = series.max(), series.min()
+            fig.add_hline(y=0, line_dash="dash", line_color="#444")
+            fig.add_hline(y=h, line_dash="dot", line_color=colors[0], line_width=1,
+                annotation_text=f"H: {h:.0f}", annotation_position="right",
+                annotation_font=dict(color=colors[0], size=10))
+            fig.add_hline(y=l, line_dash="dot", line_color=colors[1], line_width=1,
+                annotation_text=f"L: {l:.0f}", annotation_position="right",
+                annotation_font=dict(color=colors[1], size=10))
+
+        def chart_layout(fig, title, height=380):
+            fig.update_layout(
+                title=dict(text=title, font=dict(size=12, color=T["text2"]), x=0),
+                height=height,
+                plot_bgcolor=T["plot_bg"], paper_bgcolor=T["plot_bg"],
+                font=dict(color=T["text2"]),
+                hovermode="x unified",
+                margin=dict(l=10, r=10, t=40, b=10),
+                legend=dict(bgcolor=T["card"], bordercolor=T["card_bdr"], borderwidth=1,
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                xaxis=dict(gridcolor=T["grid"], tickfont=dict(size=10),
+                    showspikes=True, spikemode="across", spikecolor=T["text3"], spikethickness=1, spikedash="dot"),
+                yaxis=dict(gridcolor=T["grid"], title="Value (₹)", tickfont=dict(size=10),
+                    showspikes=True, spikemode="across", spikecolor=T["text3"], spikethickness=1, spikedash="dot"),
+                hoverlabel=dict(bgcolor=T["card"], bordercolor=T["card_bdr"], font=dict(color=T["text"])),
+            )
+
+        fig1 = go.Figure()
+        fig1.add_trace(go.Scatter(x=df_bfly8.index, y=df_bfly8["spread12"],
+            name="Leg1 − Leg2", line=dict(color="#f87171", width=2),
+            hovertemplate="%{x|%H:%M}<br>Leg1−Leg2: %{y:.2f}<extra></extra>"))
+        fig1.add_trace(go.Scatter(x=df_bfly8.index, y=df_bfly8["spread34"],
+            name="Leg3 − Leg4", line=dict(color="#60a5fa", width=2),
+            hovertemplate="%{x|%H:%M}<br>Leg3−Leg4: %{y:.2f}<extra></extra>"))
+        make_hlines(fig1, df_bfly8["spread12"], ["#f87171", "#f87171"])
+        chart_layout(fig1, "Spread Chart — Leg1−Leg2  &  Leg3−Leg4")
+        st.plotly_chart(fig1, use_container_width=True)
+
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(x=df_bfly8.index, y=df_bfly8["combined"],
+            name="Combined (Leg1−Leg2) + (Leg3−Leg4)",
+            line=dict(color="#818cf8", width=2.5),
+            fill="tozeroy", fillcolor="rgba(129,140,248,0.08)",
+            hovertemplate="%{x|%H:%M}<br>Combined: %{y:.2f}<extra></extra>"))
+        make_hlines(fig2, df_bfly8["combined"], ["#34d399", "#f87171"])
+        chart_layout(fig2, "Combined Chart — (Leg1−Leg2) + (Leg3−Leg4)")
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info("👆 Configure your 4 legs above and click **Fetch 8-Leg Data**.")
+
 
 # ─────────────────────────────────────────────
 # TAB 1 — SPREAD DASHBOARD
