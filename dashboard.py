@@ -969,7 +969,7 @@ with tab2:
             name="Leg3 − Leg4", line=dict(color="#60a5fa", width=2),
             hovertemplate="%{x|%H:%M}<br>Leg3−Leg4: %{y:.2f}<extra></extra>"))
         make_hlines(fig1, df_custom["spread12"], ["#f87171", "#f87171"])
-        chart_layout(fig1, "Spread Chart — Leg1−Leg2  &  Leg3−Leg4")
+        chart_layout(fig1, "Spread Chart — Leg1−Leg2+Leg3-Leg4  &  Leg5−Leg6+Leg7-Leg8")
         st.plotly_chart(fig1, use_container_width=True)
 
         fig2 = go.Figure()
