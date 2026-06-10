@@ -1825,3 +1825,67 @@ with tab5:
         mcx2_mult = st.number_input("Mult", value=1.0, step=0.1, key="mcx2_mult")
 
     st.info("MCX tab added. UI ready. Symbol format supports MCX:SILVERM26JUN230000CE and MCX:SILVERM26JUNFUT. Fetch logic can be wired next.")
+
+
+# Added MCX implementation
+
+with tab5:
+    st.markdown("### ⛏️ MCX Spread")
+
+    def build_mcx_option_symbol(underlying, expiry, strike, opt_type):
+        return f"MCX:{underlying}{expiry}{int(strike)}{opt_type}"
+
+    def build_mcx_future_symbol(underlying, expiry):
+        return f"MCX:{underlying}{expiry}FUT"
+
+    c1,c2,c3,c4 = st.columns(4)
+    with c1:
+        mode = st.selectbox("Mode", ["Options","Futures"])
+    with c2:
+        under1 = st.selectbox("Leg1", ["SILVER","SILVERM","GOLD","GOLDM","CRUDEOIL","NATURALGAS"], key="mcx_l1")
+    with c3:
+        under2 = st.selectbox("Leg2", ["SILVER","SILVERM","GOLD","GOLDM","CRUDEOIL","NATURALGAS"], key="mcx_l2")
+    with c4:
+        ratio = st.number_input("Ratio", value=1.0, step=0.1, key="mcx_ratio")
+
+    expiry = st.text_input("Expiry", value="26JUN", key="mcx_exp")
+
+    if mode == "Options":
+        a,b,c,d = st.columns(4)
+        with a: strike1 = st.number_input("Leg1 Strike", value=230000, key="mcx_st1")
+        with b: type1 = st.selectbox("Leg1 Type", ["CE","PE"], key="mcx_ty1")
+        with c: strike2 = st.number_input("Leg2 Strike", value=230000, key="mcx_st2")
+        with d: type2 = st.selectbox("Leg2 Type", ["CE","PE"], key="mcx_ty2")
+
+    if st.button("FETCH MCX DATA", key="mcx_fetch"):
+        fyers = get_fyers_client()
+        if fyers:
+            try:
+                if mode == "Options":
+                    sym1 = build_mcx_option_symbol(under1, expiry, strike1, type1)
+                    sym2 = build_mcx_option_symbol(under2, expiry, strike2, type2)
+                else:
+                    sym1 = build_mcx_future_symbol(under1, expiry)
+                    sym2 = build_mcx_future_symbol(under2, expiry)
+
+                d1 = fetch_candles(fyers, sym1, 5)
+                d2 = fetch_candles(fyers, sym2, 5)
+
+                idx = d1.index.intersection(d2.index)
+                spread = d1["close"].reindex(idx) - d2["close"].reindex(idx) * ratio
+
+                st.session_state["mcx_df"] = spread.to_frame("spread")
+            except Exception as e:
+                st.error(str(e))
+
+    if "mcx_df" in st.session_state and not st.session_state["mcx_df"].empty:
+        dfm = st.session_state["mcx_df"]
+        m1,m2,m3 = st.columns(3)
+        m1.metric("Current Spread", round(float(dfm["spread"].iloc[-1]),2))
+        m2.metric("High", round(float(dfm["spread"].max()),2))
+        m3.metric("Low", round(float(dfm["spread"].min()),2))
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=dfm.index, y=dfm["spread"], name="MCX Spread"))
+        fig.update_layout(height=500, title="MCX Spread")
+        st.plotly_chart(fig, use_container_width=True)
