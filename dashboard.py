@@ -189,6 +189,16 @@ _UNDERLYING_SYM = {
     "BANKNIFTY": "NSE:NIFTYBANK-INDEX",
     "FINNIFTY":  "NSE:FINNIFTY-INDEX",
     "MIDCPNIFTY":"NSE:MIDCPNIFTY-INDEX",
+    # MCX commodities — option chain symbol format
+    "CRUDEOIL":  "MCX:CRUDEOIL-INDEX",
+    "GOLD":      "MCX:GOLD-INDEX",
+    "SILVER":    "MCX:SILVER-INDEX",
+    "NATURALGAS":"MCX:NATURALGAS-INDEX",
+    "COPPER":    "MCX:COPPER-INDEX",
+    "ALUMINIUM": "MCX:ALUMINIUM-INDEX",
+    "ZINC":      "MCX:ZINC-INDEX",
+    "LEAD":      "MCX:LEAD-INDEX",
+    "NICKEL":    "MCX:NICKEL-INDEX",
 }
 
 _MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]
@@ -766,12 +776,14 @@ if "df_custom" not in st.session_state:
     st.session_state.df_custom = pd.DataFrame()
 if "df_bfly8" not in st.session_state:
     st.session_state.df_bfly8 = pd.DataFrame()
+if "df_mcx" not in st.session_state:
+    st.session_state.df_mcx = pd.DataFrame()
 
 # ─────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Spread Dashboard", "🧮 Butterfly", "📐 IV Analysis","🦋 Butterfly Straddle","⛏️ MCX Spread"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Spread Dashboard", "🧮 Butterfly", "📐 IV Analysis","🦋 Butterfly Straddle", "🔶 MCX Spread"])
 
 # ─────────────────────────────────────────────
 # TAB 2 — CUSTOM 4-LEG BUILDER
@@ -1782,586 +1794,295 @@ if auto_refresh and date_str == date.today().strftime("%Y-%m-%d") and not df.emp
 # TAB 5 — MCX SPREAD
 # ─────────────────────────────────────────────
 
+# ─────────────────────────────────────────────
+# TAB 5 — MCX SPREAD DASHBOARD
+# ─────────────────────────────────────────────
 
-# MCX TAB PLACEHOLDER
+MCX_UNDERLYINGS = ["CRUDEOIL", "GOLD", "SILVER", "NATURALGAS", "COPPER",
+                   "ALUMINIUM", "ZINC", "LEAD", "NICKEL"]
+
+def _mcx_optchain_sym(underlying):
+    """Return the Fyers option chain symbol for an MCX commodity."""
+    return f"MCX:{underlying}-INDEX"
+
+@st.cache_resource
+def _fetch_mcx_expiries(client_id, token, underlying):
+    """Fetch MCX option chain expiries for a given commodity."""
+    from collections import defaultdict
+    try:
+        fyers = fyersModel.FyersModel(client_id=client_id, token=token, log_path="")
+        sym   = _mcx_optchain_sym(underlying)
+        resp  = fyers.optionchain(data={"symbol": sym, "strikecount": 1, "timestamp": ""})
+        if not (resp and resp.get("s") == "ok"):
+            return {}, f"optionchain API: {resp}"
+        raw = resp.get("data", {}).get("expiryData", [])
+        parsed = []
+        for entry in raw:
+            if not isinstance(entry, dict): continue
+            d = entry.get("date", "")
+            try:
+                dd, mm, yyyy = d.split("-")
+                dd, mm, yyyy = int(dd), int(mm), int(yyyy)
+            except Exception:
+                continue
+            yy  = yyyy % 100
+            mon = _MONTHS[mm - 1]
+            parsed.append((yy, mm, dd, mon))
+
+        by_month = {}
+        for yy, mm, dd, mon in parsed:
+            by_month.setdefault((yy, mm), []).append(dd)
+        last_of_month = {k: max(v) for k, v in by_month.items()}
+
+        result = {}
+        for yy, mm, dd, mon in parsed:
+            is_monthly = (dd == last_of_month[(yy, mm)])
+            if is_monthly:
+                code  = f"{yy:02d}{mon}"
+                label = f"{dd:02d} {mon} {yy:02d} (M)"
+            else:
+                code  = f"{yy:02d}{mm:02d}{dd:02d}"
+                label = f"{dd:02d} {mon} {yy:02d} (W)"
+            result[label] = code
+        return result, None
+    except Exception as e:
+        return {}, str(e)
+
+def get_mcx_expiries(underlying):
+    """Return expiry dict for an MCX underlying, using shared token."""
+    cache_key = f"mcx_exp_{underlying}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    try:
+        token, _ = get_shared_token()
+        if not token:
+            return {}
+        cid = get_secret("FYERS_CLIENT_ID") or CLIENT_ID
+        result, err = _fetch_mcx_expiries(cid, token, underlying)
+        if result:
+            st.session_state[cache_key] = result
+        elif err:
+            st.warning(f"⚠️ MCX expiry fetch failed for `{underlying}`: {err}")
+        return result
+    except Exception as e:
+        st.warning(f"⚠️ MCX expiry exception for `{underlying}`: {e}")
+        return {}
+
+def build_mcx_symbol(underlying, expiry, option_type, strike):
+    """Build Fyers MCX option symbol."""
+    ot = "CE" if option_type.upper() in ("C", "CE") else "PE"
+    expiry = expiry.strip().upper()
+    if any(c.isalpha() for c in expiry):
+        return f"MCX:{underlying}{expiry}{strike}{ot}"
+    yy, mm, dd = expiry[0:2], expiry[2:4], expiry[4:6]
+    return f"MCX:{underlying}{yy}{int(mm)}{dd}{strike}{ot}"
+
 with tab5:
-    # ── Controls ──
-    st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:4px;'>⚙ Settings</div>", unsafe_allow_html=True)
-    r0 = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1.5])
-    with r0[0]: selected_date  = st.date_input("Date", value=default_date, key="date_inp")
-    with r0[1]: multiplier     = st.number_input("Ratio", value=3.3, step=0.1, min_value=0.1, key="mult")
-    with r0[2]: candle_interval= st.selectbox("Interval (min)", [1, 3, 5, 10, 15, 30, 60], index=2, key="interval")
-    with r0[3]: show_diff      = st.checkbox("4-Leg Chart", value=True, key="show_diff")
-    with r0[4]: auto_refresh   = st.checkbox("Auto Refresh", value=True, key="auto_ref")
-    with r0[5]: refresh_secs   = st.slider("Refresh (sec)", 5, 60, REFRESH_SECONDS, key="ref_sec")
-    with r0[6]: st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-    with r0[7]: fetch_btn      = st.button("⟳  FETCH DATA", use_container_width=True, type="primary", key="fetch_btn")
+    st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:4px;'>⚙ MCX Settings</div>", unsafe_allow_html=True)
 
-    date_str = selected_date.strftime("%Y-%m-%d")
+    # ── Top control row ──
+    mcx_r0 = st.columns([1.2, 1, 1, 1, 1, 1.5])
+    with mcx_r0[0]: mcx_date      = st.date_input("Date",           value=default_date,           key="mcx_date")
+    with mcx_r0[1]: mcx_interval  = st.selectbox("Interval (min)",  [1, 3, 5, 10, 15, 30, 60], index=2, key="mcx_interval")
+    with mcx_r0[2]: mcx_auto      = st.checkbox("Auto Refresh",     value=True,                   key="mcx_auto_ref")
+    with mcx_r0[3]: mcx_ref_secs  = st.slider("Refresh (sec)",      5, 60, REFRESH_SECONDS,       key="mcx_ref_sec")
+    with mcx_r0[4]: st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    with mcx_r0[5]: mcx_fetch_btn = st.button("⟳  FETCH MCX DATA", use_container_width=True, type="primary", key="mcx_fetch_btn")
 
-    # Both legs on one row: L1-label | exch | under | ce-exp | pe-exp | ce-str | pe-str | gap | L2-label | exch | under | ce-exp | pe-exp | ce-str | pe-str
-    legs_row = st.columns([0.25, 0.5, 0.8, 0.8, 0.8, 0.65, 0.65, 0.15, 0.25, 0.5, 0.8, 0.8, 0.8, 0.65, 0.65])
-    legs_row[0].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#dc2626;'>LEG 1</div>", unsafe_allow_html=True)
-    with legs_row[1]:  sensex_exchange   = st.selectbox("Exchange",   ["BSE","NSE"],                                                           index=0, key="sx_exch")
-    with legs_row[2]:  sensex_underlying = st.selectbox("Underlying",  ["SENSEX","BANKEX","NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY"],         index=0, key="sx_under")
-    _sx_opts = get_expiries_for(sensex_exchange, sensex_underlying)
-    with legs_row[3]:  sensex_ce_expiry  = expiry_selectbox("CE Expiry", _sx_opts, "sx_ce_man", "sx_ce_sel", "260312")
-    with legs_row[4]:  sensex_pe_expiry  = expiry_selectbox("PE Expiry", _sx_opts, "sx_pe_man", "sx_pe_sel", "260312")
-    with legs_row[5]:  sensex_ce_strike  = st.number_input("CE Strike", value=80000, step=100, key="sx_ce_str")
-    with legs_row[6]:  sensex_pe_strike  = st.number_input("PE Strike", value=80000, step=100, key="sx_pe_str")
-    legs_row[7].markdown("<div style='padding-top:28px;font-size:10px;color:#e2e8f0;text-align:center;'>│</div>", unsafe_allow_html=True)
-    legs_row[8].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#0284c7;'>LEG 2</div>", unsafe_allow_html=True)
-    with legs_row[9]:  nifty_exchange    = st.selectbox("Exchange",   ["NSE","BSE"],                                                           index=0, key="nf_exch")
-    with legs_row[10]: nifty_underlying  = st.selectbox("Underlying",  ["NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX","BANKEX"],         index=0, key="nf_under")
-    _nf_opts = get_expiries_for(nifty_exchange, nifty_underlying)
-    with legs_row[11]: nifty_ce_expiry   = expiry_selectbox("CE Expiry", _nf_opts, "nf_ce_man", "nf_ce_sel", "260310")
-    with legs_row[12]: nifty_pe_expiry   = expiry_selectbox("PE Expiry", _nf_opts, "nf_pe_man", "nf_pe_sel", "260310")
-    with legs_row[13]: nifty_ce_strike   = st.number_input("CE Strike", value=24800, step=50, key="nf_ce_str")
-    with legs_row[14]: nifty_pe_strike   = st.number_input("PE Strike", value=24800, step=50, key="nf_pe_str")
+    mcx_date_str = mcx_date.strftime("%Y-%m-%d")
+
+    # ── Leg row (both legs in one row, exchange fixed to MCX) ──
+    mcx_legs_row = st.columns([0.25, 0.8, 0.8, 0.8, 0.65, 0.65,
+                                0.15,
+                                0.25, 0.8, 0.8, 0.8, 0.65, 0.65])
+
+    # LEG 1
+    mcx_legs_row[0].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#dc2626;'>LEG 1<br><span style='color:#f59e0b;'>MCX</span></div>", unsafe_allow_html=True)
+    with mcx_legs_row[1]:  mcx_l1_under  = st.selectbox("Underlying",  MCX_UNDERLYINGS, index=0, key="mcx_l1_under")
+    _mcx_l1_opts = get_mcx_expiries(mcx_l1_under)
+    with mcx_legs_row[2]:  mcx_l1_ce_exp = expiry_selectbox("CE Expiry", _mcx_l1_opts, "mcx_l1_ce_man", "mcx_l1_ce_sel", "")
+    with mcx_legs_row[3]:  mcx_l1_pe_exp = expiry_selectbox("PE Expiry", _mcx_l1_opts, "mcx_l1_pe_man", "mcx_l1_pe_sel", "")
+    with mcx_legs_row[4]:  mcx_l1_ce_str = st.number_input("CE Strike", value=5000, step=50,  key="mcx_l1_ce_str")
+    with mcx_legs_row[5]:  mcx_l1_pe_str = st.number_input("PE Strike", value=5000, step=50,  key="mcx_l1_pe_str")
+
+    # Divider column
+    mcx_legs_row[6].markdown("<div style='padding-top:28px;font-size:10px;color:#e2e8f0;text-align:center;'>│</div>", unsafe_allow_html=True)
+
+    # LEG 2
+    mcx_legs_row[7].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#0284c7;'>LEG 2<br><span style='color:#f59e0b;'>MCX</span></div>", unsafe_allow_html=True)
+    with mcx_legs_row[8]:  mcx_l2_under  = st.selectbox("Underlying",  MCX_UNDERLYINGS, index=1, key="mcx_l2_under")
+    _mcx_l2_opts = get_mcx_expiries(mcx_l2_under)
+    with mcx_legs_row[9]:  mcx_l2_ce_exp = expiry_selectbox("CE Expiry", _mcx_l2_opts, "mcx_l2_ce_man", "mcx_l2_ce_sel", "")
+    with mcx_legs_row[10]: mcx_l2_pe_exp = expiry_selectbox("PE Expiry", _mcx_l2_opts, "mcx_l2_pe_man", "mcx_l2_pe_sel", "")
+    with mcx_legs_row[11]: mcx_l2_ce_str = st.number_input("CE Strike", value=5000, step=50,  key="mcx_l2_ce_str")
+    with mcx_legs_row[12]: mcx_l2_pe_str = st.number_input("PE Strike", value=5000, step=50,  key="mcx_l2_pe_str")
 
     st.divider()
 
-    # ── Symbols ──
-    sym_sx_ce = build_symbol(sensex_exchange, sensex_underlying, sensex_ce_expiry, "C", int(sensex_ce_strike))
-    sym_sx_pe = build_symbol(sensex_exchange, sensex_underlying, sensex_pe_expiry, "P", int(sensex_pe_strike))
-    sym_nf_ce = build_symbol(nifty_exchange,  nifty_underlying,  nifty_ce_expiry,  "C", int(nifty_ce_strike))
-    sym_nf_pe = build_symbol(nifty_exchange,  nifty_underlying,  nifty_pe_expiry,  "P", int(nifty_pe_strike))
+    # ── Build symbols ──
+    mcx_sym_l1_ce = build_mcx_symbol(mcx_l1_under, mcx_l1_ce_exp, "C", int(mcx_l1_ce_str))
+    mcx_sym_l1_pe = build_mcx_symbol(mcx_l1_under, mcx_l1_pe_exp, "P", int(mcx_l1_pe_str))
+    mcx_sym_l2_ce = build_mcx_symbol(mcx_l2_under, mcx_l2_ce_exp, "C", int(mcx_l2_ce_str))
+    mcx_sym_l2_pe = build_mcx_symbol(mcx_l2_under, mcx_l2_pe_exp, "P", int(mcx_l2_pe_str))
 
-    if fetch_btn or st.session_state.df.empty:
-        st.session_state.df = fetch_live_data()
-    df = st.session_state.df
+    def fetch_mcx_data():
+        fyers = get_fyers_client()
+        if fyers is None:
+            return pd.DataFrame()
+        with st.spinner("Fetching MCX option data from Fyers..."):
+            df_l1_ce = fetch_candles(fyers, mcx_sym_l1_ce, mcx_interval, mcx_date_str)
+            df_l1_pe = fetch_candles(fyers, mcx_sym_l1_pe, mcx_interval, mcx_date_str)
+            df_l2_ce = fetch_candles(fyers, mcx_sym_l2_ce, mcx_interval, mcx_date_str)
+            df_l2_pe = fetch_candles(fyers, mcx_sym_l2_pe, mcx_interval, mcx_date_str)
+        if any(df.empty for df in [df_l1_ce, df_l1_pe, df_l2_ce, df_l2_pe]):
+            st.warning(
+                f"⚠️ One or more symbols returned no data.\n"
+                f"Built: `{mcx_sym_l1_ce}` | `{mcx_sym_l1_pe}` | `{mcx_sym_l2_ce}` | `{mcx_sym_l2_pe}`"
+            )
+            return pd.DataFrame()
 
-    if df.empty:
-        st.info("👆 Set your options above and click **Fetch Data**.")
+        for df_ in [df_l1_ce, df_l1_pe, df_l2_ce, df_l2_pe]:
+            df_.drop_duplicates(keep="last", inplace=True) if not df_.empty else None
+
+        df_l1_ce = df_l1_ce[~df_l1_ce.index.duplicated(keep="last")]
+        df_l1_pe = df_l1_pe[~df_l1_pe.index.duplicated(keep="last")]
+        df_l2_ce = df_l2_ce[~df_l2_ce.index.duplicated(keep="last")]
+        df_l2_pe = df_l2_pe[~df_l2_pe.index.duplicated(keep="last")]
+
+        common_idx = (df_l1_ce.index
+                      .intersection(df_l1_pe.index)
+                      .intersection(df_l2_ce.index)
+                      .intersection(df_l2_pe.index))
+        df = pd.DataFrame({
+            "l1_ce": df_l1_ce["close"].reindex(common_idx),
+            "l1_pe": df_l1_pe["close"].reindex(common_idx),
+            "l2_ce": df_l2_ce["close"].reindex(common_idx),
+            "l2_pe": df_l2_pe["close"].reindex(common_idx),
+        }).dropna()
+        df["ce_spread"] = df["l1_ce"] - df["l2_ce"]
+        df["pe_spread"] = df["l1_pe"] - df["l2_pe"]
+        return df
+
+    if mcx_fetch_btn or st.session_state.df_mcx.empty:
+        st.session_state.df_mcx = fetch_mcx_data()
+
+    df_mcx = st.session_state.df_mcx
+
+    if df_mcx.empty:
+        st.info("👆 Select your MCX instruments above and click **Fetch MCX Data**.")
     else:
-        latest   = df.iloc[-1]
-        ce_val   = latest["ce_spread"]
-        pe_val   = latest["pe_spread"]
-        diff_val = latest["diff"]
-        updated  = df.index[-1].strftime("%H:%M:%S")
-        is_today = date_str == date.today().strftime("%Y-%m-%d")
+        latest_mcx  = df_mcx.iloc[-1]
+        mcx_ce_val  = latest_mcx["ce_spread"]
+        mcx_pe_val  = latest_mcx["pe_spread"]
+        mcx_updated = df_mcx.index[-1].strftime("%H:%M:%S")
 
-        ce_delta  = ce_val  - df["ce_spread"].iloc[-2]  if len(df) > 1 else 0
-        pe_delta  = pe_val  - df["pe_spread"].iloc[-2]  if len(df) > 1 else 0
-        diff_delta= diff_val- df["diff"].iloc[-2]        if len(df) > 1 else 0
+        mcx_ce_delta = mcx_ce_val - df_mcx["ce_spread"].iloc[-2] if len(df_mcx) > 1 else 0
+        mcx_pe_delta = mcx_pe_val - df_mcx["pe_spread"].iloc[-2] if len(df_mcx) > 1 else 0
 
-        def delta_html(v):
+        def mcx_delta_html(v):
             arrow = "▲" if v >= 0 else "▼"
             color = "#f87171" if v >= 0 else "#34d399"
             return f"<span style='color:{color};font-size:11px;font-family:Space Mono'>{arrow} {abs(v):.2f}</span>"
 
-        synth_val = f"{latest['synth_ratio']:.4f}" if "synth_ratio" in df.columns and pd.notna(latest.get("synth_ratio")) else "N/A"
-
+        # ── Metric cards (2: CE Spread, PE Spread only — no 4-leg total, no synth fut) ──
         st.markdown(f"""
-        <div class="metrics-grid">
+        <div class="metrics-grid" style="grid-template-columns: repeat(3, 1fr);">
             <div class="metric-card card-ce">
                 <div class="metric-badge">📈</div>
                 <div class="metric-label">CE SPREAD</div>
-                <div class="metric-value val-ce">{ce_val:+.1f}</div>
-                <div class="metric-sub">{sensex_underlying} CE − {nifty_underlying} CE &times;{multiplier} &nbsp; {delta_html(ce_delta)}</div>
+                <div class="metric-value val-ce">{mcx_ce_val:+.2f}</div>
+                <div class="metric-sub">{mcx_l1_under} CE − {mcx_l2_under} CE &nbsp; {mcx_delta_html(mcx_ce_delta)}</div>
             </div>
             <div class="metric-card card-pe">
                 <div class="metric-badge">📉</div>
                 <div class="metric-label">PE SPREAD</div>
-                <div class="metric-value val-pe">{pe_val:+.1f}</div>
-                <div class="metric-sub">{sensex_underlying} PE − {nifty_underlying} PE &times;{multiplier} &nbsp; {delta_html(pe_delta)}</div>
-            </div>
-            <div class="metric-card card-diff">
-                <div class="metric-badge">⚖️</div>
-                <div class="metric-label">4 LEG TOTAL</div>
-                <div class="metric-value val-diff">{diff_val:+.1f}</div>
-                <div class="metric-sub">CE + PE combined &nbsp; {delta_html(diff_delta)}</div>
+                <div class="metric-value val-pe">{mcx_pe_val:+.2f}</div>
+                <div class="metric-sub">{mcx_l1_under} PE − {mcx_l2_under} PE &nbsp; {mcx_delta_html(mcx_pe_delta)}</div>
             </div>
             <div class="metric-card card-time">
-                <div class="metric-badge">🔢</div>
-                <div class="metric-label">SYNTHETIC FUT - MULTIPLIER</div>
-                <div class="metric-value val-time">{synth_val}</div>
-                <div class="metric-sub">{'LIVE' if is_today else 'HISTORICAL'} &nbsp;·&nbsp; {updated}</div>
+                <div class="metric-badge">🕐</div>
+                <div class="metric-label">LAST UPDATE</div>
+                <div class="metric-value val-time">{mcx_updated}</div>
+                <div class="metric-sub">{'LIVE' if mcx_date_str == date.today().strftime('%Y-%m-%d') else 'HISTORICAL'} &nbsp;·&nbsp; {len(df_mcx)} candles</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        has_synth = "synth_ratio" in df.columns and df["synth_ratio"].notna().any()
+        # ── Two separate chart tabs: CE and PE ──
+        mcx_ct_ce, mcx_ct_pe = st.tabs(["📈 CE Spread Chart", "📉 PE Spread Chart"])
 
-        # Determine rows
-        n_rows = 1 + int(show_diff) + int(has_synth)
-        if n_rows == 3:
-            row_heights = [0.55, 0.25, 0.20]
-        elif n_rows == 2:
-            row_heights = [0.70, 0.30]
-        else:
-            row_heights = [1.0]
-
-        fig = make_subplots(
-            rows=n_rows, cols=1,
-            shared_xaxes=True,
-            row_heights=row_heights,
-            vertical_spacing=0.04
-        )
-
-        diff_row  = 2 if show_diff else None
-        synth_row = (3 if show_diff else 2) if has_synth else None
-
-        fig.add_trace(go.Scatter(x=df.index, y=df["ce_spread"], name="CE Spread", line=dict(color="#ff4444", width=2), hovertemplate="%{x|%H:%M}<br>CE: %{y:.2f}<extra></extra>"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["pe_spread"], name="PE Spread", line=dict(color="#44ff88", width=2), hovertemplate="%{x|%H:%M}<br>PE: %{y:.2f}<extra></extra>"), row=1, col=1)
-        fig.add_hline(y=0, line_dash="dash", line_color="#444", row=1, col=1)
-
-        if show_diff:
-            fig.add_trace(go.Scatter(x=df.index, y=df["diff"], name="4 Leg", line=dict(color="#ffaa00", width=2), hovertemplate="%{x|%H:%M}<br>4 Leg: %{y:.2f}<extra></extra>"), row=diff_row, col=1)
-            fig.add_hline(y=0, line_dash="dash", line_color="#444", row=diff_row, col=1)
-            diff_high = df["diff"].max()
-            diff_low  = df["diff"].min()
-            fig.add_hline(y=diff_high, line_dash="dot", line_color="#ffaa00", line_width=1, opacity=0.5,
-                annotation_text=f"H: {diff_high:.0f}", annotation_position="right",
-                annotation_font=dict(color="#ffaa00", size=10), row=diff_row, col=1)
-            fig.add_hline(y=diff_low, line_dash="dot", line_color="#ffaa00", line_width=1, opacity=0.5,
-                annotation_text=f"L: {diff_low:.0f}", annotation_position="right",
-                annotation_font=dict(color="#ffaa00", size=10), row=diff_row, col=1)
-
-        if has_synth:
-            fig.add_trace(go.Scatter(
-                x=df.index, y=df["synth_ratio"], name="Synthetic Fut - Multiplier",
-                line=dict(color="#818cf8", width=2),
-                hovertemplate="%{x|%H:%M}<br>Synth: %{y:.4f}<extra></extra>"
-            ), row=synth_row, col=1)
-            ratio_high = df["synth_ratio"].max()
-            ratio_low  = df["synth_ratio"].min()
-            fig.add_hline(y=ratio_high, line_dash="dot", line_color="#818cf8", line_width=1, opacity=0.5,
-                annotation_text=f"H: {ratio_high:.4f}", annotation_position="right",
-                annotation_font=dict(color="#818cf8", size=10), row=synth_row, col=1)
-            fig.add_hline(y=ratio_low, line_dash="dot", line_color="#818cf8", line_width=1, opacity=0.5,
-                annotation_text=f"L: {ratio_low:.4f}", annotation_position="right",
-                annotation_font=dict(color="#818cf8", size=10), row=synth_row, col=1)
-
-        fig.update_layout(
-            height=580 + (120 if has_synth else 0),
-            plot_bgcolor=T["plot_bg"],
-            paper_bgcolor=T["plot_bg"],
-            font=dict(color=T["text2"], family="Space Mono"),
-            legend=dict(
-                bgcolor=T["card"], bordercolor=T["card_bdr"],
-                borderwidth=1, font=dict(size=11),
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-            hovermode="x unified",
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis=dict(gridcolor=T["grid"], tickfont=dict(size=10)),
-            yaxis=dict(gridcolor=T["grid"], title="Spread (₹)", tickfont=dict(size=10)),
-            hoverlabel=dict(bgcolor=T["card"], bordercolor=T["card_bdr"], font=dict(color=T["text"])),
-        )
-        if show_diff:
-            fig.update_yaxes(gridcolor=T["grid"], title_text="4 Leg", tickfont=dict(size=10), row=diff_row, col=1)
-            fig.update_xaxes(gridcolor=T["grid"], tickfont=dict(size=10), row=diff_row, col=1)
-
-
-        if has_synth:
-            fig.update_yaxes(gridcolor=T["grid"], title_text="Synthetic Fut - Multiplier", tickfont=dict(size=10), row=synth_row, col=1)
-            fig.update_xaxes(gridcolor=T["grid"], tickfont=dict(size=10), row=synth_row, col=1)
-
-        st.plotly_chart(fig, use_container_width=True)
-        if st.session_state.get("spot_debug"):
-            st.warning(f"⚠️ Spot debug: {st.session_state['spot_debug']}")
-
-
-
-    # ─────────────────────────────────────────────
-
-# ─────────────────────────────────────────────
-# TAB 3 — IV ANALYSIS
-# ─────────────────────────────────────────────
-
-with tab3:
-    SENSEX_LOT = 20
-    NIFTY_LOT  = 65
-
-    def bs_price(S, K, T, r, sigma, opt):
-        import math
-        if T <= 0 or sigma <= 0:
-            return max(0.0, S - K) if opt == "CE" else max(0.0, K - S)
-        d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
-        d2 = d1 - sigma * math.sqrt(T)
-        from scipy.stats import norm
-        if opt == "CE":
-            return S * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
-        else:
-            return K * math.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-
-    def calc_iv(mkt_price, S, K, T, r, opt):
-        from scipy.optimize import brentq
-        if T <= 0 or S <= 0 or K <= 0 or mkt_price <= 0:
-            return float("nan")
-        try:
-            return brentq(lambda sig: bs_price(S, K, T, r, sig, opt) - mkt_price,
-                          1e-6, 20.0, xtol=1e-6, maxiter=200) * 100
-        except Exception:
-            return float("nan")
-
-    def expiry_to_date(s):
-        import calendar as _cal
-        s = s.strip().upper()
-        MONTHS = {m:i+1 for i,m in enumerate(["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"])}
-        # Monthly format: YYMON e.g. 26MAR
-        if any(c.isalpha() for c in s):
-            yy  = int(s[:2])
-            mon = s[2:5]
-            mm  = MONTHS.get(mon, 3)
-            dd  = _cal.monthrange(2000+yy, mm)[1]
-            return date(2000+yy, mm, dd)
-        # Weekly 5-char: YYM DD e.g. 26416 (Apr 16) or 26325 (Mar 25)
-        if len(s) == 5:
-            yy = int(s[0:2])
-            mm = int(s[2])
-            dd = int(s[3:5])
-            return date(2000+yy, mm, dd)
-        # Weekly 6-char: YYMMDD e.g. 260325
-        return date(2000 + int(s[0:2]), int(s[2:4]), int(s[4:6]))
-
-    def round_to(val, base):
-        return int(base * round(float(val) / base))
-
-    # ── Controls ──
-    st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:4px;'>⚙ IV Settings</div>", unsafe_allow_html=True)
-    iv_r0 = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1.5])
-    with iv_r0[0]: iv_date      = st.date_input("Date",          value=default_date,           key="iv_date")
-    with iv_r0[1]: iv_interval  = st.selectbox("Interval (min)", [1,3,5,10,15,30,60], index=2, key="iv_interval")
-    _iv_sx_opts = get_expiries_for("BSE", "SENSEX")
-    _iv_nf_opts = get_expiries_for("NSE", "NIFTY")
-    with iv_r0[2]: sx_iv_expiry = expiry_selectbox("Sensex Expiry", _iv_sx_opts, "iv_sx_man", "iv_sx_sel", "260312")
-    with iv_r0[3]: nf_iv_expiry = expiry_selectbox("Nifty Expiry",  _iv_nf_opts, "iv_nf_man", "iv_nf_sel", "260310")
-    with iv_r0[4]: iv_rate      = st.number_input("Risk-Free %", value=6.5, step=0.1,          key="iv_rate")
-    with iv_r0[5]: iv_auto      = st.checkbox("Auto Refresh", value=True,                      key="iv_auto_ref")
-    with iv_r0[6]: iv_ref_secs  = st.slider("Refresh (sec)", 5, 60, 15,                        key="iv_ref_sec")
-    with iv_r0[7]: iv_fetch     = st.button("⟳  FETCH IV DATA", type="primary", use_container_width=True, key="iv_fetch")
-
-    iv_date_str = iv_date.strftime("%Y-%m-%d")
-    iv_mult = st.session_state.get("iv_synth_mult", None)
-
-    if iv_mult:
-        st.markdown(f"<div style='font-size:11px;color:#64748b;margin:2px 0 8px 0;'>Synthetic Fut - Multiplier: <b>{iv_mult:.4f}</b> &nbsp;|&nbsp; Sensex lot: <b>{SENSEX_LOT}</b> &nbsp;|&nbsp; Nifty lot: <b>{NIFTY_LOT}</b></div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div style='font-size:11px;color:#64748b;margin:2px 0 8px 0;'>Synthetic Fut - Multiplier: <i>fetched on load</i> &nbsp;|&nbsp; Sensex lot: <b>{SENSEX_LOT}</b> &nbsp;|&nbsp; Nifty lot: <b>{NIFTY_LOT}</b></div>", unsafe_allow_html=True)
-
-    if iv_fetch or st.session_state.pop("_iv_rerun", False):
-        fyers = get_fyers_client()
-        if fyers is None:
-            st.error("Not connected to Fyers.")
-        else:
-            with st.spinner("Fetching spot & option data for IV..."):
-                df_sx_s = fetch_candles(fyers, "BSE:SENSEX-INDEX",  iv_interval, iv_date_str)
-                if df_sx_s.empty:
-                    df_sx_s = fetch_candles(fyers, "BSE:SENSEX", iv_interval, iv_date_str)
-                df_nf_s = fetch_candles(fyers, "NSE:NIFTY50-INDEX", iv_interval, iv_date_str)
-                if df_nf_s.empty:
-                    df_nf_s = fetch_candles(fyers, "NSE:NIFTY50", iv_interval, iv_date_str)
-
-            if df_sx_s.empty or df_nf_s.empty:
-                st.error("⚠️ Could not fetch spot prices.")
-            else:
-                df_sx_s = df_sx_s[~df_sx_s.index.duplicated(keep="last")]
-                df_nf_s = df_nf_s[~df_nf_s.index.duplicated(keep="last")]
-
-                last_sx = df_sx_s["close"].iloc[-1]
-                last_nf = df_nf_s["close"].iloc[-1]
-
-                # Compute Synthetic Fut - Multiplier from spot prices
-                # synth_ratio = synth_sensex / synth_nifty ≈ spot_sensex / spot_nifty (no options here)
-                # Use per-minute ratio series, take last value
-                common_ts = df_sx_s.index.intersection(df_nf_s.index)
-                synth_mult_series = df_sx_s["close"].reindex(common_ts) / df_nf_s["close"].reindex(common_ts)
-                iv_mult = round(float(synth_mult_series.dropna().iloc[-1]), 4)
-                st.session_state["iv_synth_mult"] = iv_mult
-
-                # ── Dynamic ATM: compute per-minute strikes ──
-                # Graph 1 = ATM strike, Graph 2 = ATM + 500
-                sx_prices = df_sx_s["close"].reindex(common_ts)
-
-                # ATM = nearest 500 (rounded, not floor)
-                # Graph 1 = ATM strike, Graph 2 = ATM + 500
-                def atm_nearest(s):
-                    return int(round(float(s) / 500) * 500)
-
-                lo_sx_series = sx_prices.apply(atm_nearest)          # per-minute ATM
-                hi_sx_series = lo_sx_series.apply(lambda k: k + 500) # per-minute ATM+500
-                lo_nf_series = (lo_sx_series / synth_mult_series.reindex(lo_sx_series.index).ffill()).apply(lambda k: round_to(k, 50))
-                hi_nf_series = (hi_sx_series / synth_mult_series.reindex(hi_sx_series.index).ffill()).apply(lambda k: round_to(k, 50))
-
-                # All unique strikes needed
-                uniq_sx_lo = sorted(lo_sx_series.unique())
-                uniq_sx_hi = sorted(hi_sx_series.unique())
-                uniq_nf_lo = sorted(lo_nf_series.unique())
-                uniq_nf_hi = sorted(hi_nf_series.unique())
-
-                # Fetch all unique option series
-                all_syms = {}
-                for k in uniq_sx_lo:
-                    all_syms[f"sx_lo_CE_{k}"] = build_symbol("BSE","SENSEX", sx_iv_expiry,"C", int(k))
-                    all_syms[f"sx_lo_PE_{k}"] = build_symbol("BSE","SENSEX", sx_iv_expiry,"P", int(k))
-                for k in uniq_sx_hi:
-                    all_syms[f"sx_hi_CE_{k}"] = build_symbol("BSE","SENSEX", sx_iv_expiry,"C", int(k))
-                    all_syms[f"sx_hi_PE_{k}"] = build_symbol("BSE","SENSEX", sx_iv_expiry,"P", int(k))
-                for k in uniq_nf_lo:
-                    all_syms[f"nf_lo_CE_{k}"] = build_symbol("NSE","NIFTY",  nf_iv_expiry,"C", int(k))
-                    all_syms[f"nf_lo_PE_{k}"] = build_symbol("NSE","NIFTY",  nf_iv_expiry,"P", int(k))
-                for k in uniq_nf_hi:
-                    all_syms[f"nf_hi_CE_{k}"] = build_symbol("NSE","NIFTY",  nf_iv_expiry,"C", int(k))
-                    all_syms[f"nf_hi_PE_{k}"] = build_symbol("NSE","NIFTY",  nf_iv_expiry,"P", int(k))
-
-                with st.spinner(f"Fetching {len(all_syms)} option series (dynamic ATM)..."):
-                    fetched = {}
-                    for key, sym in all_syms.items():
-                        df_o = fetch_candles(fyers, sym, iv_interval, iv_date_str)
-                        fetched[key] = df_o[~df_o.index.duplicated(keep="last")] if not df_o.empty else df_o
-
-                # ── Compute IV per minute using that minute's ATM strike ──
-                r = iv_rate / 100
-                exp_sx = expiry_to_date(sx_iv_expiry)
-                exp_nf = expiry_to_date(nf_iv_expiry)
-
-                def dynamic_iv_series(spot_df, strike_series, fetched_dict, prefix, expiry_dt, opt_type):
-                    """Build IV series where strike can change each minute."""
-                    out_iv     = {}
-                    out_strike = {}
-                    valid_ts   = spot_df.index.intersection(strike_series.index)
-                    for ts in valid_ts:
-                        S       = spot_df.loc[ts, "close"]
-                        K       = int(strike_series.loc[ts])
-                        opt_key = f"{prefix}_{K}"
-                        df_o    = fetched_dict.get(opt_key)
-                        if df_o is None or df_o.empty or ts not in df_o.index: continue
-                        price   = df_o.loc[ts, "close"]
-                        T       = max((expiry_dt - ts.date()).days / 365, 1/365)
-                        out_iv[ts]     = calc_iv(price, S, K, T, r, opt_type)
-                        out_strike[ts] = K
-                    return pd.Series(out_iv, dtype=float), pd.Series(out_strike, dtype=float)
-
-                iv_sx_lo_CE, sk_sx_lo_CE = dynamic_iv_series(df_sx_s, lo_sx_series, fetched, "sx_lo_CE", exp_sx, "CE")
-                iv_sx_lo_PE, sk_sx_lo_PE = dynamic_iv_series(df_sx_s, lo_sx_series, fetched, "sx_lo_PE", exp_sx, "PE")
-                iv_nf_lo_CE, sk_nf_lo_CE = dynamic_iv_series(df_nf_s, lo_nf_series, fetched, "nf_lo_CE", exp_nf, "CE")
-                iv_nf_lo_PE, sk_nf_lo_PE = dynamic_iv_series(df_nf_s, lo_nf_series, fetched, "nf_lo_PE", exp_nf, "PE")
-                iv_sx_hi_CE, sk_sx_hi_CE = dynamic_iv_series(df_sx_s, hi_sx_series, fetched, "sx_hi_CE", exp_sx, "CE")
-                iv_sx_hi_PE, sk_sx_hi_PE = dynamic_iv_series(df_sx_s, hi_sx_series, fetched, "sx_hi_PE", exp_sx, "PE")
-                iv_nf_hi_CE, sk_nf_hi_CE = dynamic_iv_series(df_nf_s, hi_nf_series, fetched, "nf_hi_CE", exp_nf, "CE")
-                iv_nf_hi_PE, sk_nf_hi_PE = dynamic_iv_series(df_nf_s, hi_nf_series, fetched, "nf_hi_PE", exp_nf, "PE")
-
-                # Strike-change timestamps — debounced (strike must hold for 3+ candles)
-                def strike_changes(sk_series, min_candles=3):
-                    """Only mark a strike change if new strike persists min_candles."""
-                    if sk_series.empty:
-                        return []
-                    items = list(sk_series.items())
-                    changes = []
-                    prev_k = items[0][1]
-                    run_k, run_start, run_len = items[0][1], items[0][0], 1
-                    confirmed_k = prev_k
-                    for ts, k in items[1:]:
-                        if k == run_k:
-                            run_len += 1
-                            if run_len == min_candles and run_k != confirmed_k:
-                                changes.append((run_start, int(run_k)))
-                                confirmed_k = run_k
-                        else:
-                            run_k, run_start, run_len = k, ts, 1
-                    return changes
-
-                iv_res = {
-                    "sx_lo_CE": iv_sx_lo_CE, "sx_lo_PE": iv_sx_lo_PE,
-                    "nf_lo_CE": iv_nf_lo_CE, "nf_lo_PE": iv_nf_lo_PE,
-                    "sx_hi_CE": iv_sx_hi_CE, "sx_hi_PE": iv_sx_hi_PE,
-                    "nf_hi_CE": iv_nf_hi_CE, "nf_hi_PE": iv_nf_hi_PE,
-                }
-                iv_changes = {
-                    "lo_sx": strike_changes(sk_sx_lo_CE),
-                    "lo_nf": strike_changes(sk_nf_lo_CE),
-                    "hi_sx": strike_changes(sk_sx_hi_CE),
-                    "hi_nf": strike_changes(sk_nf_hi_CE),
-                }
-
-                iv_sk = {
-                    "sx_lo_CE": sk_sx_lo_CE, "sx_lo_PE": sk_sx_lo_PE,
-                    "nf_lo_CE": sk_nf_lo_CE, "nf_lo_PE": sk_nf_lo_PE,
-                    "sx_hi_CE": sk_sx_hi_CE, "sx_hi_PE": sk_sx_hi_PE,
-                    "nf_hi_CE": sk_nf_hi_CE, "nf_hi_PE": sk_nf_hi_PE,
-                }
-                st.session_state["iv_res"]       = iv_res
-                st.session_state["iv_sk"]        = iv_sk
-                st.session_state["iv_changes"]   = iv_changes
-                st.session_state["iv_lo_sx"]     = int(lo_sx_series.iloc[-1])
-                st.session_state["iv_hi_sx"]     = int(hi_sx_series.iloc[-1])
-                st.session_state["iv_lo_nf"]     = int(lo_nf_series.iloc[-1])
-                st.session_state["iv_hi_nf"]     = int(hi_nf_series.iloc[-1])
-                st.session_state["iv_last_sx"]   = last_sx
-                # Strike ranges used across the day
-                st.session_state["iv_lo_sx_range"] = sorted(lo_sx_series.unique())
-                st.session_state["iv_hi_sx_range"] = sorted(hi_sx_series.unique())
-                st.session_state["iv_lo_nf_range"] = sorted(lo_nf_series.unique())
-                st.session_state["iv_hi_nf_range"] = sorted(hi_nf_series.unique())
-
-    # ── Render ──
-    if "iv_res" in st.session_state:
-        iv_res       = st.session_state["iv_res"]
-        iv_sk        = st.session_state.get("iv_sk", {})
-        iv_changes   = st.session_state.get("iv_changes", {})
-        lo_sx        = st.session_state["iv_lo_sx"]; hi_sx  = st.session_state["iv_hi_sx"]
-        lo_nf        = st.session_state["iv_lo_nf"]; hi_nf  = st.session_state["iv_hi_nf"]
-        last_sx      = st.session_state.get("iv_last_sx", 0)
-        lo_sx_range  = st.session_state.get("iv_lo_sx_range", [lo_sx])
-        hi_sx_range  = st.session_state.get("iv_hi_sx_range", [hi_sx])
-        lo_nf_range  = st.session_state.get("iv_lo_nf_range", [lo_nf])
-        hi_nf_range  = st.session_state.get("iv_hi_nf_range", [hi_nf])
-
-        def range_label(strikes):
-            if len(strikes) == 1: return str(strikes[0])
-            return f"{min(strikes)}–{max(strikes)}"
-
-        st.markdown(f"""<div style='font-size:12px;color:#64748b;background:#f1f5f9;
-            border-radius:6px;padding:8px 12px;margin:4px 0 10px 0;font-family:monospace;'>
-            Sensex spot: <b>{last_sx:.0f}</b> &nbsp;→&nbsp;
-            Graph 1: Sensex <b>{lo_sx}</b> / Nifty <b>{lo_nf}</b>
-            &nbsp;|&nbsp;
-            Graph 2: Sensex <b>{hi_sx}</b> / Nifty <b>{hi_nf}</b>
-        </div>""", unsafe_allow_html=True)
-
-        COLORS = {"sx_CE":"#f87171","sx_PE":"#fca5a5","nf_CE":"#60a5fa","nf_PE":"#93c5fd"}
-
-        def card(label, series, color, lot):
-            if series is not None and not series.dropna().empty:
-                val = series.dropna().iloc[-1]
-                return f"""<div style='background:#fff;border:1px solid #e2e8f0;border-top:3px solid {color};
-                    border-radius:8px;padding:10px 12px;'>
-                    <div style='font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;'>{label}</div>
-                    <div style='font-size:22px;font-weight:800;color:{color};margin:4px 0 2px 0;'>{val:.1f}%</div>
-                    <div style='font-size:11px;color:#64748b;'>Lot: {lot}</div></div>"""
-            return f"""<div style='background:#fff;border:1px solid #e2e8f0;border-top:3px solid {color};
-                border-radius:8px;padding:10px 12px;'>
-                <div style='font-size:9px;color:#94a3b8;text-transform:uppercase;'>{label}</div>
-                <div style='font-size:16px;color:#cbd5e1;'>No data</div></div>"""
-
-        def iv_chart(pfx, sx_k, nf_k, title, chg_sx=None, chg_nf=None):
-            fig = go.Figure()
-            nfx = pfx.replace("sx","nf")
-            entries = [
-                (f"{pfx}_CE", "Sensex CE", COLORS["sx_CE"], 2),
-                (f"{pfx}_PE", "Sensex PE", COLORS["sx_PE"], 1.5),
-                (f"{nfx}_CE", "Nifty CE",  COLORS["nf_CE"], 2),
-                (f"{nfx}_PE", "Nifty PE",  COLORS["nf_PE"], 1.5),
-            ]
-            for key, name, color, width in entries:
-                s  = iv_res.get(key, pd.Series(dtype=float)).dropna()
-                sk = iv_sk.get(key, pd.Series(dtype=float))
-                if not s.empty:
-                    sk_aligned = sk.reindex(s.index).ffill().fillna(0).astype(int)
-                    hover_text = [f"Strike: {k}<br>IV: {iv:.2f}%"
-                                  for iv, k in zip(s.values, sk_aligned.values)]
-                    latest_iv  = s.iloc[-1]
-                    latest_sk  = int(sk_aligned.iloc[-1]) if not sk_aligned.empty else sx_k
-                    fig.add_trace(go.Scatter(
-                        x=s.index, y=s.values,
-                        name=f"{name} (K:{latest_sk} · {latest_iv:.1f}%)",
-                        line=dict(color=color, width=width),
-                        text=hover_text,
-                        hovertemplate="%{text}<extra>" + name + "</extra>",
-                    ))
-
-            # Strike-change vertical lines — Sensex (orange) and Nifty (purple)
-            for ts, new_k in (chg_sx or []):
-                fig.add_shape(type="line", x0=str(ts), x1=str(ts), y0=0, y1=1,
-                    xref="x", yref="paper",
-                    line=dict(color="#f97316", width=1.5, dash="dash"))
-                fig.add_annotation(x=str(ts), y=1, xref="x", yref="paper",
-                    text=f"SX→{new_k}", showarrow=False, yanchor="bottom",
-                    font=dict(color="#f97316", size=9), bgcolor="rgba(255,255,255,0.7)")
-            for ts, new_k in (chg_nf or []):
-                fig.add_shape(type="line", x0=str(ts), x1=str(ts), y0=0, y1=1,
-                    xref="x", yref="paper",
-                    line=dict(color="#a855f7", width=1.5, dash="dot"))
-                fig.add_annotation(x=str(ts), y=0, xref="x", yref="paper",
-                    text=f"NF→{new_k}", showarrow=False, yanchor="top",
-                    font=dict(color="#a855f7", size=9), bgcolor="rgba(255,255,255,0.7)")
-
+        def mcx_chart_layout(fig, title, height=480):
             fig.update_layout(
-                title=dict(text=title, font=dict(size=12, color="#64748b"), x=0),
-                height=400, plot_bgcolor="#f8fafc", paper_bgcolor="#f8fafc",
-                font=dict(color="#334155"), hovermode="x unified",
+                title=dict(text=title, font=dict(size=12, color=T["text2"]), x=0),
+                height=height,
+                plot_bgcolor=T["plot_bg"], paper_bgcolor=T["plot_bg"],
+                font=dict(color=T["text2"], family="Space Mono"),
+                hovermode="x unified",
                 margin=dict(l=10, r=10, t=40, b=10),
-                legend=dict(bgcolor="#fff", bordercolor="#e2e8f0", borderwidth=1,
+                legend=dict(bgcolor=T["card"], bordercolor=T["card_bdr"], borderwidth=1,
                     orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(gridcolor="#e2e8f0", tickfont=dict(size=10),
-                    showspikes=True, spikemode="across", spikecolor="#94a3b8", spikethickness=1),
-                yaxis=dict(gridcolor="#e2e8f0", title="IV %", tickfont=dict(size=10),
-                    showspikes=True, spikemode="across", spikecolor="#94a3b8", spikethickness=1),
-                hoverlabel=dict(bgcolor="#fff", bordercolor="#e2e8f0"),
+                xaxis=dict(gridcolor=T["grid"], tickfont=dict(size=10),
+                    showspikes=True, spikemode="across", spikecolor=T["text3"],
+                    spikethickness=1, spikedash="dot"),
+                yaxis=dict(gridcolor=T["grid"], title="Spread (₹)", tickfont=dict(size=10),
+                    showspikes=True, spikemode="across", spikecolor=T["text3"],
+                    spikethickness=1, spikedash="dot"),
+                hoverlabel=dict(bgcolor=T["card"], bordercolor=T["card_bdr"],
+                    font=dict(color=T["text"])),
             )
-            return fig
 
-        # Graph 1
-        st.markdown(f"<div style='font-size:12px;font-weight:700;color:#64748b;margin:10px 0 6px 0;'>📉 Graph 1 — Sensex ATM &nbsp;<span style='color:#f87171'>{range_label(lo_sx_range)}</span> &nbsp;/ Nifty <span style='color:#60a5fa'>{range_label(lo_nf_range)}</span> &nbsp;<span style='font-weight:400;font-size:11px;'>(dynamic ATM · closing: {lo_sx}/{lo_nf})</span></div>", unsafe_allow_html=True)
-        c1,c2,c3,c4 = st.columns(4)
-        c1.markdown(card(f"Sensex ATM CE IV ({range_label(lo_sx_range)})", iv_res.get("sx_lo_CE"), COLORS["sx_CE"], SENSEX_LOT), unsafe_allow_html=True)
-        c2.markdown(card(f"Sensex ATM PE IV ({range_label(lo_sx_range)})", iv_res.get("sx_lo_PE"), COLORS["sx_PE"], SENSEX_LOT), unsafe_allow_html=True)
-        c3.markdown(card(f"Nifty ATM CE IV ({range_label(lo_nf_range)})",  iv_res.get("nf_lo_CE"), COLORS["nf_CE"], NIFTY_LOT),  unsafe_allow_html=True)
-        c4.markdown(card(f"Nifty ATM PE IV ({range_label(lo_nf_range)})",  iv_res.get("nf_lo_PE"), COLORS["nf_PE"], NIFTY_LOT),  unsafe_allow_html=True)
-        st.plotly_chart(iv_chart("sx_lo", lo_sx, lo_nf, f"IV % — Sensex ATM {range_label(lo_sx_range)} & Nifty ATM {range_label(lo_nf_range)}", iv_changes.get("lo_sx"), iv_changes.get("lo_nf")), use_container_width=True)
+        def add_hlines_mcx(fig, series, main_color):
+            h = series.max(); l = series.min()
+            fig.add_hline(y=0, line_dash="dash", line_color="#444")
+            fig.add_hline(y=h, line_dash="dot", line_color=main_color, line_width=1, opacity=0.6,
+                annotation_text=f"H: {h:.2f}", annotation_position="right",
+                annotation_font=dict(color=main_color, size=10))
+            fig.add_hline(y=l, line_dash="dot", line_color=main_color, line_width=1, opacity=0.6,
+                annotation_text=f"L: {l:.2f}", annotation_position="right",
+                annotation_font=dict(color=main_color, size=10))
 
-        # ── IV Differential Charts ──
-        def diff_chart(ce_sx_key, ce_nf_key, pe_sx_key, pe_nf_key, title):
-            fig = go.Figure()
-            ce_sx = iv_res.get(ce_sx_key, pd.Series(dtype=float)).dropna()
-            ce_nf = iv_res.get(ce_nf_key, pd.Series(dtype=float)).dropna()
-            pe_sx = iv_res.get(pe_sx_key, pd.Series(dtype=float)).dropna()
-            pe_nf = iv_res.get(pe_nf_key, pd.Series(dtype=float)).dropna()
-            # CE diff
-            common_ce = ce_sx.index.intersection(ce_nf.index)
-            if len(common_ce) > 0:
-                ce_diff = ce_sx.reindex(common_ce) - ce_nf.reindex(common_ce)
-                fig.add_trace(go.Scatter(x=ce_diff.index, y=ce_diff.values,
-                    name=f"CE Diff (last: {ce_diff.iloc[-1]:.1f}%)",
-                    line=dict(color="red", width=2),
-                    hovertemplate="CE Diff: %{y:.2f}%<extra></extra>"))
-            # PE diff
-            common_pe = pe_sx.index.intersection(pe_nf.index)
-            if len(common_pe) > 0:
-                pe_diff = pe_sx.reindex(common_pe) - pe_nf.reindex(common_pe)
-                fig.add_trace(go.Scatter(x=pe_diff.index, y=pe_diff.values,
-                    name=f"PE Diff (last: {pe_diff.iloc[-1]:.1f}%)",
-                    line=dict(color="green", width=2),
-                    hovertemplate="PE Diff: %{y:.2f}%<extra></extra>"))
-            fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1)
-            fig.update_layout(
-                title=dict(text=title, font=dict(size=12, color="#64748b"), x=0),
-                height=320, plot_bgcolor="#f8fafc", paper_bgcolor="#f8fafc",
-                font=dict(color="#334155"), hovermode="x unified",
-                margin=dict(l=10, r=10, t=40, b=10),
-                legend=dict(bgcolor="#fff", bordercolor="#e2e8f0", borderwidth=1,
-                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(gridcolor="#e2e8f0", tickfont=dict(size=10),
-                    showspikes=True, spikemode="across", spikecolor="#94a3b8", spikethickness=1),
-                yaxis=dict(gridcolor="#e2e8f0", title="IV Diff %", tickfont=dict(size=10),
-                    showspikes=True, spikemode="across", spikecolor="#94a3b8", spikethickness=1),
-                hoverlabel=dict(bgcolor="#fff", bordercolor="#e2e8f0"),
-            )
-            return fig
+        with mcx_ct_ce:
+            fig_ce = go.Figure()
+            fig_ce.add_trace(go.Scatter(
+                x=df_mcx.index, y=df_mcx["ce_spread"],
+                name=f"{mcx_l1_under} CE − {mcx_l2_under} CE",
+                line=dict(color="#ff4444", width=2.5),
+                fill="tozeroy", fillcolor="rgba(255,68,68,0.07)",
+                hovertemplate="%{x|%H:%M}<br>CE Spread: %{y:.2f}<extra></extra>"
+            ))
+            add_hlines_mcx(fig_ce, df_mcx["ce_spread"], "#ff4444")
+            mcx_chart_layout(fig_ce, f"MCX CE Spread — {mcx_l1_under} CE − {mcx_l2_under} CE")
+            st.plotly_chart(fig_ce, use_container_width=True)
 
-        st.markdown("<div style='font-size:12px;font-weight:700;color:#64748b;margin:16px 0 6px 0;'>📊 IV Differential — Sensex IV − Nifty IV (ATM)</div>", unsafe_allow_html=True)
-        st.plotly_chart(diff_chart("sx_lo_CE","nf_lo_CE","sx_lo_PE","nf_lo_PE", "Sensex CE IV − Nifty CE IV  &  Sensex PE IV − Nifty PE IV"), use_container_width=True)
+            # CE data table (last 20 rows)
+            with st.expander("📋 CE Spread Data (last 20 candles)"):
+                disp_ce = df_mcx[["l1_ce","l2_ce","ce_spread"]].copy()
+                disp_ce.columns = [f"{mcx_l1_under} CE", f"{mcx_l2_under} CE", "CE Spread"]
+                disp_ce.index = disp_ce.index.strftime("%H:%M")
+                st.dataframe(disp_ce.tail(20).style.format("{:.2f}"), use_container_width=True)
 
-        # ── Auto Refresh ──
-        if iv_auto and iv_date_str == date.today().strftime("%Y-%m-%d"):
-            time.sleep(iv_ref_secs)
-            st.session_state["_iv_rerun"] = True
-            st.rerun()
+        with mcx_ct_pe:
+            fig_pe = go.Figure()
+            fig_pe.add_trace(go.Scatter(
+                x=df_mcx.index, y=df_mcx["pe_spread"],
+                name=f"{mcx_l1_under} PE − {mcx_l2_under} PE",
+                line=dict(color="#44ff88", width=2.5),
+                fill="tozeroy", fillcolor="rgba(68,255,136,0.07)",
+                hovertemplate="%{x|%H:%M}<br>PE Spread: %{y:.2f}<extra></extra>"
+            ))
+            add_hlines_mcx(fig_pe, df_mcx["pe_spread"], "#44ff88")
+            mcx_chart_layout(fig_pe, f"MCX PE Spread — {mcx_l1_under} PE − {mcx_l2_under} PE")
+            st.plotly_chart(fig_pe, use_container_width=True)
 
-    else:
-        st.info("👆 Set expiry dates above and click **Fetch IV Data**.")
+            # PE data table (last 20 rows)
+            with st.expander("📋 PE Spread Data (last 20 candles)"):
+                disp_pe = df_mcx[["l1_pe","l2_pe","pe_spread"]].copy()
+                disp_pe.columns = [f"{mcx_l1_under} PE", f"{mcx_l2_under} PE", "PE Spread"]
+                disp_pe.index = disp_pe.index.strftime("%H:%M")
+                st.dataframe(disp_pe.tail(20).style.format("{:.2f}"), use_container_width=True)
 
-# AUTO REFRESH
-# ─────────────────────────────────────────────
-
-if auto_refresh and date_str == date.today().strftime("%Y-%m-%d") and not df.empty:
-    time.sleep(refresh_secs)
-    st.session_state.df = fetch_live_data()
-    st.rerun()
-
-
-# ─────────────────────────────────────────────
-# TAB 5 — MCX SPREAD
-# ─────────────────────────────────────────────
+    # ── MCX Auto Refresh ──
+    if mcx_auto and mcx_date_str == date.today().strftime("%Y-%m-%d") and not df_mcx.empty:
+        time.sleep(mcx_ref_secs)
+        st.session_state.df_mcx = fetch_mcx_data()
+        st.rerun()
