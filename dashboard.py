@@ -1781,64 +1781,118 @@ if auto_refresh and date_str == date.today().strftime("%Y-%m-%d") and not df.emp
 # ─────────────────────────────────────────────
 # TAB 5 — MCX SPREAD
 # ─────────────────────────────────────────────
-
 with tab5:
-    st.markdown("### ⛏️ MCX Spread")
+    st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:4px;'>⚙ MCX Settings</div>", unsafe_allow_html=True)
+    r0_mcx = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1.5])
+    with r0_mcx[0]: mcx_selected_date  = st.date_input("Date", value=default_date, key="mcx_date_inp")
+    with r0_mcx[1]: mcx_multiplier     = st.number_input("Ratio", value=1.0, step=0.1, min_value=0.1, key="mcx_mult")
+    with r0_mcx[2]: mcx_candle_interval= st.selectbox("Interval (min)", [1, 3, 5, 10, 15, 30, 60], index=2, key="mcx_interval")
+    with r0_mcx[3]: mcx_show_diff      = st.checkbox("Show Spread Chart", value=True, key="mcx_show_diff")
+    with r0_mcx[4]: mcx_auto_refresh   = st.checkbox("Auto Refresh", value=False, key="mcx_auto_ref")
+    with r0_mcx[5]: mcx_refresh_secs   = st.slider("Refresh (sec)", 5, 60, REFRESH_SECONDS, key="mcx_ref_sec")
+    with r0_mcx[6]: st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    with r0_mcx[7]: mcx_fetch_btn      = st.button("⟳ FETCH MCX DATA", use_container_width=True, type="primary", key="mcx_fetch_btn")
 
-    def build_mcx_option_symbol(underlying, expiry, strike, opt_type):
-        return f"MCX:{underlying}{expiry}{int(strike)}{opt_type}"
+    mcx_date_str = mcx_selected_date.strftime("%Y-%m-%d")
 
-    def build_mcx_future_symbol(underlying, expiry):
-        return f"MCX:{underlying}{expiry}FUT"
+    legs_row_mcx = st.columns([0.25, 0.5, 0.8, 0.8, 0.8, 0.65, 0.65, 0.15, 0.25, 0.5, 0.8, 0.8, 0.8, 0.65, 0.65])
+    legs_row_mcx[0].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#dc2626;'>LEG 1</div>", unsafe_allow_html=True)
+    with legs_row_mcx[1]:  mcx1_exchange   = st.selectbox("Exchange", ["MCX"], index=0, key="mcx1_exch")
+    with legs_row_mcx[2]:  mcx1_underlying = st.selectbox("Underlying", ["SILVER","SILVERM","GOLD","GOLDM","CRUDEOIL","NATURALGAS","COPPER","ZINC","ALUMINIUM"], index=0, key="mcx1_under")
+    _mcx1_opts = get_expiries_for("MCX", mcx1_underlying)
+    with legs_row_mcx[3]:  mcx1_ce_expiry  = expiry_selectbox("CE Expiry", _mcx1_opts, "mcx1_ce_man", "mcx1_ce_sel", "26JUN")
+    with legs_row_mcx[4]:  mcx1_pe_expiry  = expiry_selectbox("PE Expiry", _mcx1_opts, "mcx1_pe_man", "mcx1_pe_sel", "26JUN")
+    with legs_row_mcx[5]:  mcx1_ce_strike  = st.number_input("CE Strike", value=80000, step=100, key="mcx1_ce_str")
+    with legs_row_mcx[6]:  mcx1_pe_strike  = st.number_input("PE Strike", value=80000, step=100, key="mcx1_pe_str")
+    legs_row_mcx[7].markdown("<div style='padding-top:28px;font-size:10px;color:#e2e8f0;text-align:center;'>│</div>", unsafe_allow_html=True)
+    legs_row_mcx[8].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#0284c7;'>LEG 2</div>", unsafe_allow_html=True)
+    with legs_row_mcx[9]:  mcx2_exchange    = st.selectbox("Exchange", ["MCX"], index=0, key="mcx2_exch")
+    with legs_row_mcx[10]: mcx2_underlying  = st.selectbox("Underlying", ["SILVER","SILVERM","GOLD","GOLDM","CRUDEOIL","NATURALGAS","COPPER","ZINC","ALUMINIUM"], index=0, key="mcx2_under")
+    _mcx2_opts = get_expiries_for(mcx2_exchange, mcx2_underlying)
+    with legs_row_mcx[11]: mcx2_ce_expiry   = expiry_selectbox("CE Expiry", _mcx2_opts, "mcx2_ce_man", "mcx2_ce_sel", "26JUN")
+    with legs_row_mcx[12]: mcx2_pe_expiry   = expiry_selectbox("PE Expiry", _mcx2_opts, "mcx2_pe_man", "mcx2_pe_sel", "26JUN")
+    with legs_row_mcx[13]: mcx2_ce_strike   = st.number_input("CE Strike", value=80000, step=100, key="mcx2_ce_str")
+    with legs_row_mcx[14]: mcx2_pe_strike   = st.number_input("PE Strike", value=80000, step=100, key="mcx2_pe_str")
 
-    c1,c2,c3,c4 = st.columns(4)
-    with c1:
-        mode = st.selectbox("Mode", ["Options","Futures"])
-    with c2:
-        under1 = st.selectbox("Leg1", ["SILVER","SILVERM","GOLD","GOLDM","CRUDEOIL","NATURALGAS"], key="mcx_l1")
-    with c3:
-        under2 = st.selectbox("Leg2", ["SILVER","SILVERM","GOLD","GOLDM","CRUDEOIL","NATURALGAS"], key="mcx_l2")
-    with c4:
-        ratio = st.number_input("Ratio", value=1.0, step=0.1, key="mcx_ratio")
+    st.divider()
 
-    expiry = st.text_input("Expiry", value="26JUN", key="mcx_exp")
+    sym_mcx1_ce = build_symbol(mcx1_exchange, mcx1_underlying, mcx1_ce_expiry, "C", int(mcx1_ce_strike))
+    sym_mcx1_pe = build_symbol(mcx1_exchange, mcx1_underlying, mcx1_pe_expiry, "P", int(mcx1_pe_strike))
+    sym_mcx2_ce = build_symbol(mcx2_exchange, mcx2_underlying, mcx2_ce_expiry, "C", int(mcx2_ce_strike))
+    sym_mcx2_pe = build_symbol(mcx2_exchange, mcx2_underlying, mcx2_pe_expiry, "P", int(mcx2_pe_strike))
 
-    if mode == "Options":
-        a,b,c,d = st.columns(4)
-        with a: strike1 = st.number_input("Leg1 Strike", value=230000, key="mcx_st1")
-        with b: type1 = st.selectbox("Leg1 Type", ["CE","PE"], key="mcx_ty1")
-        with c: strike2 = st.number_input("Leg2 Strike", value=230000, key="mcx_st2")
-        with d: type2 = st.selectbox("Leg2 Type", ["CE","PE"], key="mcx_ty2")
-
-    if st.button("FETCH MCX DATA", key="mcx_fetch"):
+    if mcx_fetch_btn or "mcx_df" not in st.session_state:
         fyers = get_fyers_client()
-        if fyers:
-            try:
-                if mode == "Options":
-                    sym1 = build_mcx_option_symbol(under1, expiry, strike1, type1)
-                    sym2 = build_mcx_option_symbol(under2, expiry, strike2, type2)
+        if fyers is None:
+            st.session_state["mcx_df"] = pd.DataFrame()
+        else:
+            with st.spinner("Fetching MCX data..."):
+                df_m1ce = fetch_candles(fyers, sym_mcx1_ce, mcx_candle_interval, mcx_date_str)
+                df_m1pe = fetch_candles(fyers, sym_mcx1_pe, mcx_candle_interval, mcx_date_str)
+                df_m2ce = fetch_candles(fyers, sym_mcx2_ce, mcx_candle_interval, mcx_date_str)
+                df_m2pe = fetch_candles(fyers, sym_mcx2_pe, mcx_candle_interval, mcx_date_str)
+                
+                if any(d.empty for d in [df_m1ce, df_m1pe, df_m2ce, df_m2pe]):
+                    st.warning("⚠️ One or more MCX symbols returned no data.")
+                    st.session_state["mcx_df"] = pd.DataFrame()
                 else:
-                    sym1 = build_mcx_future_symbol(under1, expiry)
-                    sym2 = build_mcx_future_symbol(under2, expiry)
+                    common_mcx = df_m1ce.index.intersection(df_m1pe).intersection(df_m2ce).intersection(df_m2pe)
+                    df_mcx = pd.DataFrame({
+                        "ce_spread": df_m1ce["close"].reindex(common_mcx) - (df_m2ce["close"].reindex(common_mcx) * mcx_multiplier),
+                        "pe_spread": df_m1pe["close"].reindex(common_mcx) - (df_m2pe["close"].reindex(common_mcx) * mcx_multiplier),
+                    }).dropna()
+                    st.session_state["mcx_df"] = df_mcx
 
-                d1 = fetch_candles(fyers, sym1, 5)
-                d2 = fetch_candles(fyers, sym2, 5)
+    df_mcx = st.session_state.get("mcx_df", pd.DataFrame())
 
-                idx = d1.index.intersection(d2.index)
-                spread = d1["close"].reindex(idx) - d2["close"].reindex(idx) * ratio
+    if df_mcx.empty:
+        st.info("👆 Set your options above and click **Fetch Data**.")
+    else:
+        latest_mcx = df_mcx.iloc[-1]
+        ce_val_mcx = latest_mcx["ce_spread"]
+        pe_val_mcx = latest_mcx["pe_spread"]
+        updated_mcx = df_mcx.index[-1].strftime("%H:%M:%S")
 
-                st.session_state["mcx_df"] = spread.to_frame("spread")
-            except Exception as e:
-                st.error(str(e))
+        ce_delta_mcx = ce_val_mcx - df_mcx["ce_spread"].iloc[-2] if len(df_mcx) > 1 else 0
+        pe_delta_mcx = pe_val_mcx - df_mcx["pe_spread"].iloc[-2] if len(df_mcx) > 1 else 0
 
-    if "mcx_df" in st.session_state and not st.session_state["mcx_df"].empty:
-        dfm = st.session_state["mcx_df"]
-        m1,m2,m3 = st.columns(3)
-        m1.metric("Current Spread", round(float(dfm["spread"].iloc[-1]),2))
-        m2.metric("High", round(float(dfm["spread"].max()),2))
-        m3.metric("Low", round(float(dfm["spread"].min()),2))
+        def delta_html_mcx(v):
+            arrow = "▲" if v >= 0 else "▼"
+            color = "#f87171" if v >= 0 else "#34d399"
+            return f"<span style='color:{color};font-size:11px;font-family:Space Mono'>{arrow} {abs(v):.2f}</span>"
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=dfm.index, y=dfm["spread"], name="MCX Spread"))
-        fig.update_layout(height=500, title="MCX Spread")
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown(f"""
+        <div class="metrics-grid">
+            <div class="metric-card card-ce">
+                <div class="metric-badge">📈</div>
+                <div class="metric-label">CE SPREAD</div>
+                <div class="metric-value val-ce">{ce_val_mcx:+.1f}</div>
+                <div class="metric-sub">{mcx1_underlying} CE − {mcx2_underlying} CE &times;{mcx_multiplier} &nbsp; {delta_html_mcx(ce_delta_mcx)}</div>
+            </div>
+            <div class="metric-card card-pe">
+                <div class="metric-badge">📉</div>
+                <div class="metric-label">PE SPREAD</div>
+                <div class="metric-value val-pe">{pe_val_mcx:+.1f}</div>
+                <div class="metric-sub">{mcx1_underlying} PE − {mcx2_underlying} PE &times;{mcx_multiplier} &nbsp; {delta_html_mcx(pe_delta_mcx)}</div>
+            </div>
+            <div class="metric-card card-time">
+                <div class="metric-badge">🔢</div>
+                <div class="metric-label">LAST UPDATE</div>
+                <div class="metric-value val-time">{updated_mcx}</div>
+                <div class="metric-sub">Live Data &nbsp;·&nbsp; {len(df_mcx)} candles</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Separate Charts for CE and PE
+        fig_ce = go.Figure()
+        fig_ce.add_trace(go.Scatter(x=df_mcx.index, y=df_mcx["ce_spread"], name="CE Spread", line=dict(color="#ff4444", width=2)))
+        fig_ce.add_hline(y=0, line_dash="dash", line_color="#444")
+        fig_ce.update_layout(title="MCX CE Spread", height=300, plot_bgcolor=T["plot_bg"], paper_bgcolor=T["plot_bg"], font=dict(color=T["text2"]), margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_ce, use_container_width=True)
+
+        fig_pe = go.Figure()
+        fig_pe.add_trace(go.Scatter(x=df_mcx.index, y=df_mcx["pe_spread"], name="PE Spread", line=dict(color="#44ff88", width=2)))
+        fig_pe.add_hline(y=0, line_dash="dash", line_color="#444")
+        fig_pe.update_layout(title="MCX PE Spread", height=300, plot_bgcolor=T["plot_bg"], paper_bgcolor=T["plot_bg"], font=dict(color=T["text2"]), margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_pe, use_container_width=True)
