@@ -1807,6 +1807,11 @@ with tab5:
         unsafe_allow_html=True,
     )
 
+    # ── Diagnostic log (rebuilt every rerun) ──
+    _mcx_logs = []
+    def _mcxlog(msg):
+        _mcx_logs.append(str(msg))
+
     # ── Top control row ──
     mcx_r0 = st.columns([1.2, 1, 1, 1, 1.5])
     with mcx_r0[0]: mcx_date     = st.date_input("Date",          value=default_date,            key="mcx_date")
@@ -1834,6 +1839,7 @@ with tab5:
 
     # Expiries via the existing get_expiries_for — it already handles MCX:CRUDEOIL-INDEX
     _mcx_l1_opts = get_expiries_for("MCX", mcx_l1_under)
+    _mcxlog(f"LEG1 underlying={mcx_l1_under} → {len(_mcx_l1_opts)} expiries: {list(_mcx_l1_opts.keys())[:6]}")
 
     with mcx_legs[2]:
         mcx_l1_ce_exp = expiry_selectbox(
@@ -1865,6 +1871,7 @@ with tab5:
         mcx_l2_under = st.selectbox("Underlying", MCX_UNDERLYINGS, index=1, key="mcx_l2_under")
 
     _mcx_l2_opts = get_expiries_for("MCX", mcx_l2_under)
+    _mcxlog(f"LEG2 underlying={mcx_l2_under} → {len(_mcx_l2_opts)} expiries: {list(_mcx_l2_opts.keys())[:6]}")
 
     with mcx_legs[9]:
         mcx_l2_ce_exp = expiry_selectbox(
@@ -1887,6 +1894,10 @@ with tab5:
     _l2_ce_exp_ok = bool(mcx_l2_ce_exp and mcx_l2_ce_exp.strip())
     _l2_pe_exp_ok = bool(mcx_l2_pe_exp and mcx_l2_pe_exp.strip())
     _all_exp_ok   = _l1_ce_exp_ok and _l1_pe_exp_ok and _l2_ce_exp_ok and _l2_pe_exp_ok
+    _mcxlog(f"Expiry selections → L1 CE={mcx_l1_ce_exp!r} PE={mcx_l1_pe_exp!r} | "
+            f"L2 CE={mcx_l2_ce_exp!r} PE={mcx_l2_pe_exp!r}")
+    _mcxlog(f"All expiries OK? {_all_exp_ok} "
+            f"(L1CE={_l1_ce_exp_ok} L1PE={_l1_pe_exp_ok} L2CE={_l2_ce_exp_ok} L2PE={_l2_pe_exp_ok})")
 
     if _all_exp_ok:
         _sym_l1_ce = build_symbol("MCX", mcx_l1_under, mcx_l1_ce_exp, "C", int(mcx_l1_ce_str))
@@ -1908,26 +1919,35 @@ with tab5:
 
     # ── Fetch on button click ONLY (no auto-fetch on empty) ──
     def _fetch_mcx_data():
+        _mcxlog("── FETCH started ──")
         if not _all_exp_ok:
+            _mcxlog("ABORT: expiries not all set.")
             st.warning("⚠️ Expiry not set. Please wait for expiry dropdown to populate.")
             return pd.DataFrame()
         fyers = get_fyers_client()
         if fyers is None:
+            _mcxlog("ABORT: get_fyers_client() returned None (login/token failure).")
             return pd.DataFrame()
+        _mcxlog("Fyers client OK.")
         sym_l1_ce = build_symbol("MCX", mcx_l1_under, mcx_l1_ce_exp, "C", int(mcx_l1_ce_str))
         sym_l1_pe = build_symbol("MCX", mcx_l1_under, mcx_l1_pe_exp, "P", int(mcx_l1_pe_str))
         sym_l2_ce = build_symbol("MCX", mcx_l2_under, mcx_l2_ce_exp, "C", int(mcx_l2_ce_str))
         sym_l2_pe = build_symbol("MCX", mcx_l2_under, mcx_l2_pe_exp, "P", int(mcx_l2_pe_str))
+        _mcxlog(f"Symbols built: {sym_l1_ce} | {sym_l1_pe} | {sym_l2_ce} | {sym_l2_pe}")
+        _mcxlog(f"Fetching candles: interval={mcx_interval} date={mcx_date_str}")
         with st.spinner("Fetching MCX option data from Fyers…"):
             df_l1_ce = fetch_candles(fyers, sym_l1_ce, mcx_interval, mcx_date_str)
             df_l1_pe = fetch_candles(fyers, sym_l1_pe, mcx_interval, mcx_date_str)
             df_l2_ce = fetch_candles(fyers, sym_l2_ce, mcx_interval, mcx_date_str)
             df_l2_pe = fetch_candles(fyers, sym_l2_pe, mcx_interval, mcx_date_str)
+        _mcxlog(f"Rows returned → L1CE={len(df_l1_ce)} L1PE={len(df_l1_pe)} "
+                f"L2CE={len(df_l2_ce)} L2PE={len(df_l2_pe)}")
         missing = [n for n, d in [
             (sym_l1_ce, df_l1_ce), (sym_l1_pe, df_l1_pe),
             (sym_l2_ce, df_l2_ce), (sym_l2_pe, df_l2_pe),
         ] if d.empty]
         if missing:
+            _mcxlog(f"ABORT: empty data for {missing}")
             st.warning(f"⚠️ No data returned for: `{'` | `'.join(missing)}`")
             return pd.DataFrame()
         for _d in [df_l1_ce, df_l1_pe, df_l2_ce, df_l2_pe]:
@@ -1940,7 +1960,9 @@ with tab5:
                   .intersection(df_l1_pe.index)
                   .intersection(df_l2_ce.index)
                   .intersection(df_l2_pe.index))
+        _mcxlog(f"Common timestamps across all 4 series: {len(common)}")
         if common.empty:
+            _mcxlog("ABORT: no overlapping timestamps.")
             st.warning("⚠️ No overlapping timestamps across all 4 series.")
             return pd.DataFrame()
         out = pd.DataFrame({
@@ -1951,12 +1973,15 @@ with tab5:
         }).dropna()
         out["ce_spread"] = out["l1_ce"] - out["l2_ce"]
         out["pe_spread"] = out["l1_pe"] - out["l2_pe"]
+        _mcxlog(f"SUCCESS: built spread frame with {len(out)} rows.")
         return out
 
+    _mcxlog(f"Fetch button pressed? {bool(mcx_fetch_btn)}")
     if mcx_fetch_btn:
         st.session_state.df_mcx = _fetch_mcx_data()
 
     df_mcx = st.session_state.df_mcx
+    _mcxlog(f"df_mcx in session_state: {len(df_mcx)} rows (empty={df_mcx.empty})")
 
     # ── Results ──
     if df_mcx.empty:
@@ -2080,6 +2105,15 @@ with tab5:
                 _d_pe.columns = [f"{mcx_l1_under} PE", f"{mcx_l2_under} PE", "PE Spread"]
                 _d_pe.index   = _d_pe.index.strftime("%H:%M")
                 st.dataframe(_d_pe.style.format("{:.2f}"), use_container_width=True)
+
+    # ── Diagnostic Log Box (always visible) ──
+    st.divider()
+    st.markdown(
+        "<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;"
+        "text-transform:uppercase;color:#64748b;margin-bottom:4px;'>🪵 MCX Diagnostic Log</div>",
+        unsafe_allow_html=True,
+    )
+    st.code("\n".join(_mcx_logs) if _mcx_logs else "(no log entries)", language="text")
 
     # ── MCX Auto Refresh ──
     if mcx_auto and mcx_date_str == date.today().strftime("%Y-%m-%d") and not df_mcx.empty:
