@@ -1792,7 +1792,6 @@ if auto_refresh and date_str == date.today().strftime("%Y-%m-%d") and not df.emp
 
 # ─────────────────────────────────────────────
 # TAB 5 — MCX SPREAD
-# ─────────────────────────────────────────────
 
 # ─────────────────────────────────────────────
 # TAB 5 — MCX SPREAD DASHBOARD
@@ -1801,217 +1800,209 @@ if auto_refresh and date_str == date.today().strftime("%Y-%m-%d") and not df.emp
 MCX_UNDERLYINGS = ["CRUDEOIL", "GOLD", "SILVER", "NATURALGAS", "COPPER",
                    "ALUMINIUM", "ZINC", "LEAD", "NICKEL"]
 
-def _mcx_optchain_sym(underlying):
-    """Return the Fyers option chain symbol for an MCX commodity."""
-    return f"MCX:{underlying}-INDEX"
-
-@st.cache_resource
-def _fetch_mcx_expiries(client_id, token, underlying):
-    """Fetch MCX option chain expiries for a given commodity."""
-    from collections import defaultdict
-    try:
-        fyers = fyersModel.FyersModel(client_id=client_id, token=token, log_path="")
-        sym   = _mcx_optchain_sym(underlying)
-        resp  = fyers.optionchain(data={"symbol": sym, "strikecount": 1, "timestamp": ""})
-        if not (resp and resp.get("s") == "ok"):
-            return {}, f"optionchain API: {resp}"
-        raw = resp.get("data", {}).get("expiryData", [])
-        parsed = []
-        for entry in raw:
-            if not isinstance(entry, dict): continue
-            d = entry.get("date", "")
-            try:
-                dd, mm, yyyy = d.split("-")
-                dd, mm, yyyy = int(dd), int(mm), int(yyyy)
-            except Exception:
-                continue
-            yy  = yyyy % 100
-            mon = _MONTHS[mm - 1]
-            parsed.append((yy, mm, dd, mon))
-
-        by_month = {}
-        for yy, mm, dd, mon in parsed:
-            by_month.setdefault((yy, mm), []).append(dd)
-        last_of_month = {k: max(v) for k, v in by_month.items()}
-
-        result = {}
-        for yy, mm, dd, mon in parsed:
-            is_monthly = (dd == last_of_month[(yy, mm)])
-            if is_monthly:
-                code  = f"{yy:02d}{mon}"
-                label = f"{dd:02d} {mon} {yy:02d} (M)"
-            else:
-                code  = f"{yy:02d}{mm:02d}{dd:02d}"
-                label = f"{dd:02d} {mon} {yy:02d} (W)"
-            result[label] = code
-        return result, None
-    except Exception as e:
-        return {}, str(e)
-
-def get_mcx_expiries(underlying):
-    """Return expiry dict for an MCX underlying, using shared token."""
-    cache_key = f"mcx_exp_{underlying}"
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
-    try:
-        token, _ = get_shared_token()
-        if not token:
-            return {}
-        cid = get_secret("FYERS_CLIENT_ID") or CLIENT_ID
-        result, err = _fetch_mcx_expiries(cid, token, underlying)
-        if result:
-            st.session_state[cache_key] = result
-        elif err:
-            st.warning(f"⚠️ MCX expiry fetch failed for `{underlying}`: {err}")
-        return result
-    except Exception as e:
-        st.warning(f"⚠️ MCX expiry exception for `{underlying}`: {e}")
-        return {}
-
-def build_mcx_symbol(underlying, expiry, option_type, strike):
-    """Build Fyers MCX option symbol."""
-    ot = "CE" if option_type.upper() in ("C", "CE") else "PE"
-    expiry = expiry.strip().upper()
-    if any(c.isalpha() for c in expiry):
-        return f"MCX:{underlying}{expiry}{strike}{ot}"
-    yy, mm, dd = expiry[0:2], expiry[2:4], expiry[4:6]
-    return f"MCX:{underlying}{yy}{int(mm)}{dd}{strike}{ot}"
-
 with tab5:
-    st.markdown("<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:4px;'>⚙ MCX Settings</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;"
+        "text-transform:uppercase;color:#64748b;margin-bottom:4px;'>⚙ MCX Settings</div>",
+        unsafe_allow_html=True,
+    )
 
     # ── Top control row ──
-    mcx_r0 = st.columns([1.2, 1, 1, 1, 1, 1.5])
-    with mcx_r0[0]: mcx_date      = st.date_input("Date",           value=default_date,           key="mcx_date")
-    with mcx_r0[1]: mcx_interval  = st.selectbox("Interval (min)",  [1, 3, 5, 10, 15, 30, 60], index=2, key="mcx_interval")
-    with mcx_r0[2]: mcx_auto      = st.checkbox("Auto Refresh",     value=True,                   key="mcx_auto_ref")
-    with mcx_r0[3]: mcx_ref_secs  = st.slider("Refresh (sec)",      5, 60, REFRESH_SECONDS,       key="mcx_ref_sec")
-    with mcx_r0[4]: st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-    with mcx_r0[5]: mcx_fetch_btn = st.button("⟳  FETCH MCX DATA", use_container_width=True, type="primary", key="mcx_fetch_btn")
+    mcx_r0 = st.columns([1.2, 1, 1, 1, 1.5])
+    with mcx_r0[0]: mcx_date     = st.date_input("Date",          value=default_date,            key="mcx_date")
+    with mcx_r0[1]: mcx_interval = st.selectbox("Interval (min)", [1, 3, 5, 10, 15, 30, 60], index=2, key="mcx_interval")
+    with mcx_r0[2]: mcx_auto     = st.checkbox("Auto Refresh",    value=True,                    key="mcx_auto_ref")
+    with mcx_r0[3]: mcx_ref_secs = st.slider("Refresh (sec)",     5, 60, REFRESH_SECONDS,        key="mcx_ref_sec")
+    with mcx_r0[4]: mcx_fetch_btn = st.button("⟳  FETCH MCX DATA", use_container_width=True, type="primary", key="mcx_fetch_btn")
 
     mcx_date_str = mcx_date.strftime("%Y-%m-%d")
 
-    # ── Leg row (both legs in one row, exchange fixed to MCX) ──
-    mcx_legs_row = st.columns([0.25, 0.8, 0.8, 0.8, 0.65, 0.65,
-                                0.15,
-                                0.25, 0.8, 0.8, 0.8, 0.65, 0.65])
+    # ── Leg configuration row — exchange fixed to MCX for both legs ──
+    mcx_legs = st.columns([0.2, 0.75, 0.75, 0.75, 0.65, 0.65,
+                            0.12,
+                            0.2, 0.75, 0.75, 0.75, 0.65, 0.65])
 
-    # LEG 1
-    mcx_legs_row[0].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#dc2626;'>LEG 1<br><span style='color:#f59e0b;'>MCX</span></div>", unsafe_allow_html=True)
-    with mcx_legs_row[1]:  mcx_l1_under  = st.selectbox("Underlying",  MCX_UNDERLYINGS, index=0, key="mcx_l1_under")
-    _mcx_l1_opts = get_mcx_expiries(mcx_l1_under)
-    with mcx_legs_row[2]:  mcx_l1_ce_exp = expiry_selectbox("CE Expiry", _mcx_l1_opts, "mcx_l1_ce_man", "mcx_l1_ce_sel", "")
-    with mcx_legs_row[3]:  mcx_l1_pe_exp = expiry_selectbox("PE Expiry", _mcx_l1_opts, "mcx_l1_pe_man", "mcx_l1_pe_sel", "")
-    with mcx_legs_row[4]:  mcx_l1_ce_str = st.number_input("CE Strike", value=5000, step=50,  key="mcx_l1_ce_str")
-    with mcx_legs_row[5]:  mcx_l1_pe_str = st.number_input("PE Strike", value=5000, step=50,  key="mcx_l1_pe_str")
+    # --- LEG 1 ---
+    mcx_legs[0].markdown(
+        "<div style='padding-top:26px;font-size:10px;font-weight:700;"
+        "letter-spacing:1px;color:#dc2626;'>LEG 1<br>"
+        "<span style='color:#f59e0b;font-size:9px;'>MCX</span></div>",
+        unsafe_allow_html=True,
+    )
+    with mcx_legs[1]:
+        mcx_l1_under = st.selectbox("Underlying", MCX_UNDERLYINGS, index=0, key="mcx_l1_under")
 
-    # Divider column
-    mcx_legs_row[6].markdown("<div style='padding-top:28px;font-size:10px;color:#e2e8f0;text-align:center;'>│</div>", unsafe_allow_html=True)
+    # Expiries via the existing get_expiries_for — it already handles MCX:CRUDEOIL-INDEX
+    _mcx_l1_opts = get_expiries_for("MCX", mcx_l1_under)
 
-    # LEG 2
-    mcx_legs_row[7].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#0284c7;'>LEG 2<br><span style='color:#f59e0b;'>MCX</span></div>", unsafe_allow_html=True)
-    with mcx_legs_row[8]:  mcx_l2_under  = st.selectbox("Underlying",  MCX_UNDERLYINGS, index=1, key="mcx_l2_under")
-    _mcx_l2_opts = get_mcx_expiries(mcx_l2_under)
-    with mcx_legs_row[9]:  mcx_l2_ce_exp = expiry_selectbox("CE Expiry", _mcx_l2_opts, "mcx_l2_ce_man", "mcx_l2_ce_sel", "")
-    with mcx_legs_row[10]: mcx_l2_pe_exp = expiry_selectbox("PE Expiry", _mcx_l2_opts, "mcx_l2_pe_man", "mcx_l2_pe_sel", "")
-    with mcx_legs_row[11]: mcx_l2_ce_str = st.number_input("CE Strike", value=5000, step=50,  key="mcx_l2_ce_str")
-    with mcx_legs_row[12]: mcx_l2_pe_str = st.number_input("PE Strike", value=5000, step=50,  key="mcx_l2_pe_str")
+    with mcx_legs[2]:
+        mcx_l1_ce_exp = expiry_selectbox(
+            "CE Expiry", _mcx_l1_opts, "mcx_l1_ce_man", "mcx_l1_ce_sel", ""
+        )
+    with mcx_legs[3]:
+        mcx_l1_pe_exp = expiry_selectbox(
+            "PE Expiry", _mcx_l1_opts, "mcx_l1_pe_man", "mcx_l1_pe_sel", ""
+        )
+    with mcx_legs[4]:
+        mcx_l1_ce_str = st.number_input("CE Strike", value=5000, step=50, key="mcx_l1_ce_str")
+    with mcx_legs[5]:
+        mcx_l1_pe_str = st.number_input("PE Strike", value=5000, step=50, key="mcx_l1_pe_str")
+
+    # divider
+    mcx_legs[6].markdown(
+        "<div style='padding-top:26px;font-size:10px;color:#e2e8f0;text-align:center;'>│</div>",
+        unsafe_allow_html=True,
+    )
+
+    # --- LEG 2 ---
+    mcx_legs[7].markdown(
+        "<div style='padding-top:26px;font-size:10px;font-weight:700;"
+        "letter-spacing:1px;color:#0284c7;'>LEG 2<br>"
+        "<span style='color:#f59e0b;font-size:9px;'>MCX</span></div>",
+        unsafe_allow_html=True,
+    )
+    with mcx_legs[8]:
+        mcx_l2_under = st.selectbox("Underlying", MCX_UNDERLYINGS, index=1, key="mcx_l2_under")
+
+    _mcx_l2_opts = get_expiries_for("MCX", mcx_l2_under)
+
+    with mcx_legs[9]:
+        mcx_l2_ce_exp = expiry_selectbox(
+            "CE Expiry", _mcx_l2_opts, "mcx_l2_ce_man", "mcx_l2_ce_sel", ""
+        )
+    with mcx_legs[10]:
+        mcx_l2_pe_exp = expiry_selectbox(
+            "PE Expiry", _mcx_l2_opts, "mcx_l2_pe_man", "mcx_l2_pe_sel", ""
+        )
+    with mcx_legs[11]:
+        mcx_l2_ce_str = st.number_input("CE Strike", value=5000, step=50, key="mcx_l2_ce_str")
+    with mcx_legs[12]:
+        mcx_l2_pe_str = st.number_input("PE Strike", value=5000, step=50, key="mcx_l2_pe_str")
 
     st.divider()
 
-    # ── Build symbols ──
-    mcx_sym_l1_ce = build_mcx_symbol(mcx_l1_under, mcx_l1_ce_exp, "C", int(mcx_l1_ce_str))
-    mcx_sym_l1_pe = build_mcx_symbol(mcx_l1_under, mcx_l1_pe_exp, "P", int(mcx_l1_pe_str))
-    mcx_sym_l2_ce = build_mcx_symbol(mcx_l2_under, mcx_l2_ce_exp, "C", int(mcx_l2_ce_str))
-    mcx_sym_l2_pe = build_mcx_symbol(mcx_l2_under, mcx_l2_pe_exp, "P", int(mcx_l2_pe_str))
+    # ── Show which symbols will be built (debug info — hidden unless expiry available) ──
+    _l1_ce_exp_ok = bool(mcx_l1_ce_exp and mcx_l1_ce_exp.strip())
+    _l1_pe_exp_ok = bool(mcx_l1_pe_exp and mcx_l1_pe_exp.strip())
+    _l2_ce_exp_ok = bool(mcx_l2_ce_exp and mcx_l2_ce_exp.strip())
+    _l2_pe_exp_ok = bool(mcx_l2_pe_exp and mcx_l2_pe_exp.strip())
+    _all_exp_ok   = _l1_ce_exp_ok and _l1_pe_exp_ok and _l2_ce_exp_ok and _l2_pe_exp_ok
 
-    def fetch_mcx_data():
+    if _all_exp_ok:
+        _sym_l1_ce = build_symbol("MCX", mcx_l1_under, mcx_l1_ce_exp, "C", int(mcx_l1_ce_str))
+        _sym_l1_pe = build_symbol("MCX", mcx_l1_under, mcx_l1_pe_exp, "P", int(mcx_l1_pe_str))
+        _sym_l2_ce = build_symbol("MCX", mcx_l2_under, mcx_l2_ce_exp, "C", int(mcx_l2_ce_str))
+        _sym_l2_pe = build_symbol("MCX", mcx_l2_under, mcx_l2_pe_exp, "P", int(mcx_l2_pe_str))
+        st.markdown(
+            f"<div style='font-size:10px;color:#64748b;font-family:monospace;margin-bottom:6px;'>"
+            f"Symbols: "
+            f"<span style='color:#dc2626;'>{_sym_l1_ce}</span> · "
+            f"<span style='color:#dc2626;'>{_sym_l1_pe}</span> &nbsp;|&nbsp; "
+            f"<span style='color:#0284c7;'>{_sym_l2_ce}</span> · "
+            f"<span style='color:#0284c7;'>{_sym_l2_pe}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("⏳ Waiting for expiry data from Fyers… Select underlying and expiry will populate automatically.")
+
+    # ── Fetch on button click ONLY (no auto-fetch on empty) ──
+    def _fetch_mcx_data():
+        if not _all_exp_ok:
+            st.warning("⚠️ Expiry not set. Please wait for expiry dropdown to populate.")
+            return pd.DataFrame()
         fyers = get_fyers_client()
         if fyers is None:
             return pd.DataFrame()
-        with st.spinner("Fetching MCX option data from Fyers..."):
-            df_l1_ce = fetch_candles(fyers, mcx_sym_l1_ce, mcx_interval, mcx_date_str)
-            df_l1_pe = fetch_candles(fyers, mcx_sym_l1_pe, mcx_interval, mcx_date_str)
-            df_l2_ce = fetch_candles(fyers, mcx_sym_l2_ce, mcx_interval, mcx_date_str)
-            df_l2_pe = fetch_candles(fyers, mcx_sym_l2_pe, mcx_interval, mcx_date_str)
-        if any(df.empty for df in [df_l1_ce, df_l1_pe, df_l2_ce, df_l2_pe]):
-            st.warning(
-                f"⚠️ One or more symbols returned no data.\n"
-                f"Built: `{mcx_sym_l1_ce}` | `{mcx_sym_l1_pe}` | `{mcx_sym_l2_ce}` | `{mcx_sym_l2_pe}`"
-            )
+        sym_l1_ce = build_symbol("MCX", mcx_l1_under, mcx_l1_ce_exp, "C", int(mcx_l1_ce_str))
+        sym_l1_pe = build_symbol("MCX", mcx_l1_under, mcx_l1_pe_exp, "P", int(mcx_l1_pe_str))
+        sym_l2_ce = build_symbol("MCX", mcx_l2_under, mcx_l2_ce_exp, "C", int(mcx_l2_ce_str))
+        sym_l2_pe = build_symbol("MCX", mcx_l2_under, mcx_l2_pe_exp, "P", int(mcx_l2_pe_str))
+        with st.spinner("Fetching MCX option data from Fyers…"):
+            df_l1_ce = fetch_candles(fyers, sym_l1_ce, mcx_interval, mcx_date_str)
+            df_l1_pe = fetch_candles(fyers, sym_l1_pe, mcx_interval, mcx_date_str)
+            df_l2_ce = fetch_candles(fyers, sym_l2_ce, mcx_interval, mcx_date_str)
+            df_l2_pe = fetch_candles(fyers, sym_l2_pe, mcx_interval, mcx_date_str)
+        missing = [n for n, d in [
+            (sym_l1_ce, df_l1_ce), (sym_l1_pe, df_l1_pe),
+            (sym_l2_ce, df_l2_ce), (sym_l2_pe, df_l2_pe),
+        ] if d.empty]
+        if missing:
+            st.warning(f"⚠️ No data returned for: `{'` | `'.join(missing)}`")
             return pd.DataFrame()
-
-        for df_ in [df_l1_ce, df_l1_pe, df_l2_ce, df_l2_pe]:
-            df_.drop_duplicates(keep="last", inplace=True) if not df_.empty else None
-
+        for _d in [df_l1_ce, df_l1_pe, df_l2_ce, df_l2_pe]:
+            _d.drop_duplicates(keep="last", inplace=True)
         df_l1_ce = df_l1_ce[~df_l1_ce.index.duplicated(keep="last")]
         df_l1_pe = df_l1_pe[~df_l1_pe.index.duplicated(keep="last")]
         df_l2_ce = df_l2_ce[~df_l2_ce.index.duplicated(keep="last")]
         df_l2_pe = df_l2_pe[~df_l2_pe.index.duplicated(keep="last")]
-
-        common_idx = (df_l1_ce.index
-                      .intersection(df_l1_pe.index)
-                      .intersection(df_l2_ce.index)
-                      .intersection(df_l2_pe.index))
-        df = pd.DataFrame({
-            "l1_ce": df_l1_ce["close"].reindex(common_idx),
-            "l1_pe": df_l1_pe["close"].reindex(common_idx),
-            "l2_ce": df_l2_ce["close"].reindex(common_idx),
-            "l2_pe": df_l2_pe["close"].reindex(common_idx),
+        common = (df_l1_ce.index
+                  .intersection(df_l1_pe.index)
+                  .intersection(df_l2_ce.index)
+                  .intersection(df_l2_pe.index))
+        if common.empty:
+            st.warning("⚠️ No overlapping timestamps across all 4 series.")
+            return pd.DataFrame()
+        out = pd.DataFrame({
+            "l1_ce": df_l1_ce["close"].reindex(common),
+            "l1_pe": df_l1_pe["close"].reindex(common),
+            "l2_ce": df_l2_ce["close"].reindex(common),
+            "l2_pe": df_l2_pe["close"].reindex(common),
         }).dropna()
-        df["ce_spread"] = df["l1_ce"] - df["l2_ce"]
-        df["pe_spread"] = df["l1_pe"] - df["l2_pe"]
-        return df
+        out["ce_spread"] = out["l1_ce"] - out["l2_ce"]
+        out["pe_spread"] = out["l1_pe"] - out["l2_pe"]
+        return out
 
-    if mcx_fetch_btn or st.session_state.df_mcx.empty:
-        st.session_state.df_mcx = fetch_mcx_data()
+    if mcx_fetch_btn:
+        st.session_state.df_mcx = _fetch_mcx_data()
 
     df_mcx = st.session_state.df_mcx
 
+    # ── Results ──
     if df_mcx.empty:
-        st.info("👆 Select your MCX instruments above and click **Fetch MCX Data**.")
+        if not mcx_fetch_btn:
+            st.info("👆 Select underlyings + strikes above, then click **Fetch MCX Data**.")
     else:
-        latest_mcx  = df_mcx.iloc[-1]
-        mcx_ce_val  = latest_mcx["ce_spread"]
-        mcx_pe_val  = latest_mcx["pe_spread"]
-        mcx_updated = df_mcx.index[-1].strftime("%H:%M:%S")
-
+        latest_mcx   = df_mcx.iloc[-1]
+        mcx_ce_val   = latest_mcx["ce_spread"]
+        mcx_pe_val   = latest_mcx["pe_spread"]
+        mcx_updated  = df_mcx.index[-1].strftime("%H:%M:%S")
         mcx_ce_delta = mcx_ce_val - df_mcx["ce_spread"].iloc[-2] if len(df_mcx) > 1 else 0
         mcx_pe_delta = mcx_pe_val - df_mcx["pe_spread"].iloc[-2] if len(df_mcx) > 1 else 0
 
-        def mcx_delta_html(v):
+        def _mcx_arrow(v):
             arrow = "▲" if v >= 0 else "▼"
             color = "#f87171" if v >= 0 else "#34d399"
-            return f"<span style='color:{color};font-size:11px;font-family:Space Mono'>{arrow} {abs(v):.2f}</span>"
+            return f"<span style='color:{color};font-size:11px;font-family:\"Space Mono\",monospace;'>{arrow} {abs(v):.2f}</span>"
 
-        # ── Metric cards (2: CE Spread, PE Spread only — no 4-leg total, no synth fut) ──
+        # ── 3-card metrics (CE Spread | PE Spread | Last Update) ──
         st.markdown(f"""
-        <div class="metrics-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);">
             <div class="metric-card card-ce">
                 <div class="metric-badge">📈</div>
                 <div class="metric-label">CE SPREAD</div>
                 <div class="metric-value val-ce">{mcx_ce_val:+.2f}</div>
-                <div class="metric-sub">{mcx_l1_under} CE − {mcx_l2_under} CE &nbsp; {mcx_delta_html(mcx_ce_delta)}</div>
+                <div class="metric-sub">{mcx_l1_under} CE &minus; {mcx_l2_under} CE &nbsp; {_mcx_arrow(mcx_ce_delta)}</div>
             </div>
             <div class="metric-card card-pe">
                 <div class="metric-badge">📉</div>
                 <div class="metric-label">PE SPREAD</div>
                 <div class="metric-value val-pe">{mcx_pe_val:+.2f}</div>
-                <div class="metric-sub">{mcx_l1_under} PE − {mcx_l2_under} PE &nbsp; {mcx_delta_html(mcx_pe_delta)}</div>
+                <div class="metric-sub">{mcx_l1_under} PE &minus; {mcx_l2_under} PE &nbsp; {_mcx_arrow(mcx_pe_delta)}</div>
             </div>
             <div class="metric-card card-time">
                 <div class="metric-badge">🕐</div>
                 <div class="metric-label">LAST UPDATE</div>
                 <div class="metric-value val-time">{mcx_updated}</div>
-                <div class="metric-sub">{'LIVE' if mcx_date_str == date.today().strftime('%Y-%m-%d') else 'HISTORICAL'} &nbsp;·&nbsp; {len(df_mcx)} candles</div>
+                <div class="metric-sub">{'LIVE' if mcx_date_str == date.today().strftime('%Y-%m-%d') else 'HISTORICAL'} &nbsp;&middot;&nbsp; {len(df_mcx)} candles</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Two separate chart tabs: CE and PE ──
-        mcx_ct_ce, mcx_ct_pe = st.tabs(["📈 CE Spread Chart", "📉 PE Spread Chart"])
+        # ── Two separate chart sub-tabs ──
+        _mcx_ct_ce, _mcx_ct_pe = st.tabs(["📈 CE Spread Chart", "📉 PE Spread Chart"])
 
-        def mcx_chart_layout(fig, title, height=480):
+        def _mcx_layout(fig, title, height=480):
             fig.update_layout(
                 title=dict(text=title, font=dict(size=12, color=T["text2"]), x=0),
                 height=height,
@@ -2019,70 +2010,79 @@ with tab5:
                 font=dict(color=T["text2"], family="Space Mono"),
                 hovermode="x unified",
                 margin=dict(l=10, r=10, t=40, b=10),
-                legend=dict(bgcolor=T["card"], bordercolor=T["card_bdr"], borderwidth=1,
-                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(gridcolor=T["grid"], tickfont=dict(size=10),
-                    showspikes=True, spikemode="across", spikecolor=T["text3"],
-                    spikethickness=1, spikedash="dot"),
-                yaxis=dict(gridcolor=T["grid"], title="Spread (₹)", tickfont=dict(size=10),
-                    showspikes=True, spikemode="across", spikecolor=T["text3"],
-                    spikethickness=1, spikedash="dot"),
-                hoverlabel=dict(bgcolor=T["card"], bordercolor=T["card_bdr"],
-                    font=dict(color=T["text"])),
+                legend=dict(
+                    bgcolor=T["card"], bordercolor=T["card_bdr"], borderwidth=1,
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                ),
+                xaxis=dict(
+                    gridcolor=T["grid"], tickfont=dict(size=10),
+                    showspikes=True, spikemode="across",
+                    spikecolor=T["text3"], spikethickness=1, spikedash="dot",
+                ),
+                yaxis=dict(
+                    gridcolor=T["grid"], title="Spread (₹)", tickfont=dict(size=10),
+                    showspikes=True, spikemode="across",
+                    spikecolor=T["text3"], spikethickness=1, spikedash="dot",
+                ),
+                hoverlabel=dict(
+                    bgcolor=T["card"], bordercolor=T["card_bdr"], font=dict(color=T["text"])
+                ),
             )
 
-        def add_hlines_mcx(fig, series, main_color):
-            h = series.max(); l = series.min()
-            fig.add_hline(y=0, line_dash="dash", line_color="#444")
-            fig.add_hline(y=h, line_dash="dot", line_color=main_color, line_width=1, opacity=0.6,
+        def _mcx_hlines(fig, series, color):
+            h, l = series.max(), series.min()
+            fig.add_hline(y=0, line_dash="dash", line_color="#555")
+            fig.add_hline(
+                y=h, line_dash="dot", line_color=color, line_width=1, opacity=0.65,
                 annotation_text=f"H: {h:.2f}", annotation_position="right",
-                annotation_font=dict(color=main_color, size=10))
-            fig.add_hline(y=l, line_dash="dot", line_color=main_color, line_width=1, opacity=0.6,
+                annotation_font=dict(color=color, size=10),
+            )
+            fig.add_hline(
+                y=l, line_dash="dot", line_color=color, line_width=1, opacity=0.65,
                 annotation_text=f"L: {l:.2f}", annotation_position="right",
-                annotation_font=dict(color=main_color, size=10))
+                annotation_font=dict(color=color, size=10),
+            )
 
-        with mcx_ct_ce:
+        with _mcx_ct_ce:
             fig_ce = go.Figure()
             fig_ce.add_trace(go.Scatter(
                 x=df_mcx.index, y=df_mcx["ce_spread"],
                 name=f"{mcx_l1_under} CE − {mcx_l2_under} CE",
                 line=dict(color="#ff4444", width=2.5),
                 fill="tozeroy", fillcolor="rgba(255,68,68,0.07)",
-                hovertemplate="%{x|%H:%M}<br>CE Spread: %{y:.2f}<extra></extra>"
+                hovertemplate="%{x|%H:%M}<br>CE Spread: %{y:.2f}<extra></extra>",
             ))
-            add_hlines_mcx(fig_ce, df_mcx["ce_spread"], "#ff4444")
-            mcx_chart_layout(fig_ce, f"MCX CE Spread — {mcx_l1_under} CE − {mcx_l2_under} CE")
+            _mcx_hlines(fig_ce, df_mcx["ce_spread"], "#ff4444")
+            _mcx_layout(fig_ce, f"MCX CE Spread — {mcx_l1_under} CE − {mcx_l2_under} CE")
             st.plotly_chart(fig_ce, use_container_width=True)
 
-            # CE data table (last 20 rows)
             with st.expander("📋 CE Spread Data (last 20 candles)"):
-                disp_ce = df_mcx[["l1_ce","l2_ce","ce_spread"]].copy()
-                disp_ce.columns = [f"{mcx_l1_under} CE", f"{mcx_l2_under} CE", "CE Spread"]
-                disp_ce.index = disp_ce.index.strftime("%H:%M")
-                st.dataframe(disp_ce.tail(20).style.format("{:.2f}"), use_container_width=True)
+                _d_ce = df_mcx[["l1_ce", "l2_ce", "ce_spread"]].tail(20).copy()
+                _d_ce.columns = [f"{mcx_l1_under} CE", f"{mcx_l2_under} CE", "CE Spread"]
+                _d_ce.index   = _d_ce.index.strftime("%H:%M")
+                st.dataframe(_d_ce.style.format("{:.2f}"), use_container_width=True)
 
-        with mcx_ct_pe:
+        with _mcx_ct_pe:
             fig_pe = go.Figure()
             fig_pe.add_trace(go.Scatter(
                 x=df_mcx.index, y=df_mcx["pe_spread"],
                 name=f"{mcx_l1_under} PE − {mcx_l2_under} PE",
                 line=dict(color="#44ff88", width=2.5),
                 fill="tozeroy", fillcolor="rgba(68,255,136,0.07)",
-                hovertemplate="%{x|%H:%M}<br>PE Spread: %{y:.2f}<extra></extra>"
+                hovertemplate="%{x|%H:%M}<br>PE Spread: %{y:.2f}<extra></extra>",
             ))
-            add_hlines_mcx(fig_pe, df_mcx["pe_spread"], "#44ff88")
-            mcx_chart_layout(fig_pe, f"MCX PE Spread — {mcx_l1_under} PE − {mcx_l2_under} PE")
+            _mcx_hlines(fig_pe, df_mcx["pe_spread"], "#44ff88")
+            _mcx_layout(fig_pe, f"MCX PE Spread — {mcx_l1_under} PE − {mcx_l2_under} PE")
             st.plotly_chart(fig_pe, use_container_width=True)
 
-            # PE data table (last 20 rows)
             with st.expander("📋 PE Spread Data (last 20 candles)"):
-                disp_pe = df_mcx[["l1_pe","l2_pe","pe_spread"]].copy()
-                disp_pe.columns = [f"{mcx_l1_under} PE", f"{mcx_l2_under} PE", "PE Spread"]
-                disp_pe.index = disp_pe.index.strftime("%H:%M")
-                st.dataframe(disp_pe.tail(20).style.format("{:.2f}"), use_container_width=True)
+                _d_pe = df_mcx[["l1_pe", "l2_pe", "pe_spread"]].tail(20).copy()
+                _d_pe.columns = [f"{mcx_l1_under} PE", f"{mcx_l2_under} PE", "PE Spread"]
+                _d_pe.index   = _d_pe.index.strftime("%H:%M")
+                st.dataframe(_d_pe.style.format("{:.2f}"), use_container_width=True)
 
     # ── MCX Auto Refresh ──
     if mcx_auto and mcx_date_str == date.today().strftime("%Y-%m-%d") and not df_mcx.empty:
         time.sleep(mcx_ref_secs)
-        st.session_state.df_mcx = fetch_mcx_data()
+        st.session_state.df_mcx = _fetch_mcx_data()
         st.rerun()
