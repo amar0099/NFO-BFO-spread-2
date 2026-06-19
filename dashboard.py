@@ -228,7 +228,11 @@ def _save_expiry_cache(expiries: dict):
 
 @st.cache_resource
 def _fetch_expiries_from_fyers(client_id, token, fyers_sym):
-    """Hits Fyers option chain API. Returns (dict, error_str)."""
+    """Hits Fyers option chain API. Returns (dict, error_str).
+
+    Honors API's `expiry_flag` field ('M' = monthly, 'W' = weekly) when present;
+    falls back to last-day-of-month inference if the flag is missing.
+    """
     from collections import defaultdict
     try:
         fyers = fyersModel.FyersModel(client_id=client_id, token=token, log_path="")
@@ -241,6 +245,7 @@ def _fetch_expiries_from_fyers(client_id, token, fyers_sym):
         for entry in raw:
             if not isinstance(entry, dict): continue
             d = entry.get("date", "")
+            flag = (entry.get("expiry_flag") or "").upper()
             try:
                 dd, mm, yyyy = d.split("-")
                 dd, mm, yyyy = int(dd), int(mm), int(yyyy)
@@ -248,16 +253,21 @@ def _fetch_expiries_from_fyers(client_id, token, fyers_sym):
                 continue
             yy  = yyyy % 100
             mon = _MONTHS[mm - 1]
-            parsed.append((yy, mm, dd, mon))
+            parsed.append((yy, mm, dd, mon, flag))
 
         by_month = defaultdict(list)
-        for yy, mm, dd, mon in parsed:
+        for yy, mm, dd, mon, _flag in parsed:
             by_month[(yy, mm)].append(dd)
         last_of_month = {k: max(v) for k, v in by_month.items()}
 
         result = {}
-        for yy, mm, dd, mon in parsed:
-            is_monthly = (dd == last_of_month[(yy, mm)])
+        for yy, mm, dd, mon, flag in parsed:
+            if flag == "M":
+                is_monthly = True
+            elif flag == "W":
+                is_monthly = False
+            else:
+                is_monthly = (dd == last_of_month[(yy, mm)])
             if is_monthly:
                 code  = f"{yy:02d}{mon}"
                 label = f"{dd:02d} {mon} {yy:02d} (M)"
@@ -268,6 +278,42 @@ def _fetch_expiries_from_fyers(client_id, token, fyers_sym):
         return result, None
     except Exception as e:
         return {}, str(e)
+
+@st.cache_resource(ttl=24*3600)
+def _fetch_mcx_expiries_from_symmaster(commodity):
+    """Fallback for MCX: enumerate monthly option expiries from the public symbol master JSON.
+
+    Per Fyers docs (https://public.fyers.in/sym_details/MCX_COM_sym_master.json),
+    each key is a tradable symbol like `MCX:CRUDEOIL25DEC5500CE`. We parse out the
+    {YY}{MMM} substring between the commodity name and the strike/CE/PE suffix.
+    MCX commodity options are monthly only.
+    """
+    import re, urllib.request, json as _json
+    url = "https://public.fyers.in/sym_details/MCX_COM_sym_master.json"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            data = _json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        return {}, f"symbol-master fetch failed: {e}"
+
+    pat = re.compile(rf"^MCX:{re.escape(commodity.upper())}(\d{{2}})({'|'.join(_MONTHS)})\d+(?:CE|PE)$")
+    found = set()
+    for key in data.keys():
+        m = pat.match(str(key).upper())
+        if m:
+            found.add((int(m.group(1)), m.group(2)))
+
+    if not found:
+        return {}, f"no MCX:{commodity} option symbols found in MCX_COM_sym_master.json"
+
+    sortable = sorted(found, key=lambda t: (t[0], _MONTHS.index(t[1])))
+    result = {}
+    for yy, mon in sortable:
+        code  = f"{yy:02d}{mon}"
+        label = f"-- {mon} {yy:02d} (M)"
+        result[label] = code
+    return result, None
+
 
 def get_expiries_for(exchange, underlying):
     """Returns expiry dict — served from daily file cache; hits Fyers only once per day."""
@@ -285,6 +331,17 @@ def get_expiries_for(exchange, underlying):
             return {}
         cid = get_secret("FYERS_CLIENT_ID") or CLIENT_ID
         result, err = _fetch_expiries_from_fyers(cid, token, sym)
+
+        # 3. MCX fallback — option-chain API often returns nothing for commodities.
+        # Use the public MCX symbol master file as the authoritative source.
+        if not result and exchange.upper() == "MCX":
+            result2, err2 = _fetch_mcx_expiries_from_symmaster(underlying)
+            if result2:
+                result = result2
+                err = None  # success via fallback
+            else:
+                err = f"{err}; fallback: {err2}"
+
         if result:
             cached[sym] = result
             _save_expiry_cache(cached)
@@ -1800,6 +1857,21 @@ if auto_refresh and date_str == date.today().strftime("%Y-%m-%d") and not df.emp
 MCX_UNDERLYINGS = ["CRUDEOIL", "GOLD", "SILVER", "NATURALGAS", "COPPER",
                    "ALUMINIUM", "ZINC", "LEAD", "NICKEL"]
 
+# Typical strike & step per MCX commodity — used to seed the strike inputs sensibly.
+# Without this, GOLD/SILVER inputs would default to 5000 (CRUDEOIL range) and
+# Fyers would return empty candles even when the symbol format is right.
+MCX_STRIKE_DEFAULTS = {
+    "CRUDEOIL":   (5500,  50),
+    "GOLD":       (75000, 100),
+    "SILVER":     (90000, 250),
+    "NATURALGAS": (300,   5),
+    "COPPER":     (800,   5),
+    "ALUMINIUM":  (240,   1),
+    "ZINC":       (280,   1),
+    "LEAD":       (200,   1),
+    "NICKEL":     (1700,  10),
+}
+
 with tab5:
     st.markdown(
         "<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;"
@@ -1839,7 +1911,9 @@ with tab5:
 
     # Expiries via the existing get_expiries_for — it already handles MCX:CRUDEOIL-INDEX
     _mcx_l1_opts = get_expiries_for("MCX", mcx_l1_under)
-    _mcxlog(f"LEG1 underlying={mcx_l1_under} → {len(_mcx_l1_opts)} expiries: {list(_mcx_l1_opts.keys())[:6]}")
+    _l1_sym = _UNDERLYING_SYM.get(mcx_l1_under.upper(), f"MCX:{mcx_l1_under}-INDEX")
+    _mcxlog(f"LEG1 underlying={mcx_l1_under} (chain-symbol={_l1_sym}) → "
+            f"{len(_mcx_l1_opts)} expiries: {list(_mcx_l1_opts.keys())[:6]}")
 
     with mcx_legs[2]:
         mcx_l1_ce_exp = expiry_selectbox(
@@ -1849,10 +1923,15 @@ with tab5:
         mcx_l1_pe_exp = expiry_selectbox(
             "PE Expiry", _mcx_l1_opts, "mcx_l1_pe_man", "mcx_l1_pe_sel", ""
         )
+    _l1_def, _l1_step = MCX_STRIKE_DEFAULTS.get(mcx_l1_under, (5000, 50))
     with mcx_legs[4]:
-        mcx_l1_ce_str = st.number_input("CE Strike", value=5000, step=50, key="mcx_l1_ce_str")
+        mcx_l1_ce_str = st.number_input(
+            "CE Strike", value=_l1_def, step=_l1_step, key=f"mcx_l1_ce_str_{mcx_l1_under}"
+        )
     with mcx_legs[5]:
-        mcx_l1_pe_str = st.number_input("PE Strike", value=5000, step=50, key="mcx_l1_pe_str")
+        mcx_l1_pe_str = st.number_input(
+            "PE Strike", value=_l1_def, step=_l1_step, key=f"mcx_l1_pe_str_{mcx_l1_under}"
+        )
 
     # divider
     mcx_legs[6].markdown(
@@ -1871,7 +1950,9 @@ with tab5:
         mcx_l2_under = st.selectbox("Underlying", MCX_UNDERLYINGS, index=1, key="mcx_l2_under")
 
     _mcx_l2_opts = get_expiries_for("MCX", mcx_l2_under)
-    _mcxlog(f"LEG2 underlying={mcx_l2_under} → {len(_mcx_l2_opts)} expiries: {list(_mcx_l2_opts.keys())[:6]}")
+    _l2_sym = _UNDERLYING_SYM.get(mcx_l2_under.upper(), f"MCX:{mcx_l2_under}-INDEX")
+    _mcxlog(f"LEG2 underlying={mcx_l2_under} (chain-symbol={_l2_sym}) → "
+            f"{len(_mcx_l2_opts)} expiries: {list(_mcx_l2_opts.keys())[:6]}")
 
     with mcx_legs[9]:
         mcx_l2_ce_exp = expiry_selectbox(
@@ -1881,10 +1962,15 @@ with tab5:
         mcx_l2_pe_exp = expiry_selectbox(
             "PE Expiry", _mcx_l2_opts, "mcx_l2_pe_man", "mcx_l2_pe_sel", ""
         )
+    _l2_def, _l2_step = MCX_STRIKE_DEFAULTS.get(mcx_l2_under, (5000, 50))
     with mcx_legs[11]:
-        mcx_l2_ce_str = st.number_input("CE Strike", value=5000, step=50, key="mcx_l2_ce_str")
+        mcx_l2_ce_str = st.number_input(
+            "CE Strike", value=_l2_def, step=_l2_step, key=f"mcx_l2_ce_str_{mcx_l2_under}"
+        )
     with mcx_legs[12]:
-        mcx_l2_pe_str = st.number_input("PE Strike", value=5000, step=50, key="mcx_l2_pe_str")
+        mcx_l2_pe_str = st.number_input(
+            "PE Strike", value=_l2_def, step=_l2_step, key=f"mcx_l2_pe_str_{mcx_l2_under}"
+        )
 
     st.divider()
 
