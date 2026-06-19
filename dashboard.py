@@ -1873,16 +1873,49 @@ MCX_STRIKE_DEFAULTS = {
 }
 
 with tab5:
+    # ── PROOF-OF-LIFE BANNER ─────────────────────────────────────────────
+    # If you see this banner, the Tab 5 code block IS running.
+    # If you do NOT see this banner, the whole tab is failing to render
+    # (Streamlit error, indentation issue, or you're looking at the wrong tab).
+    import datetime as _dt
+    st.markdown(
+        f"<div style='background:#fef3c7;border:2px solid #f59e0b;"
+        f"padding:8px 12px;border-radius:6px;margin:0 0 10px 0;"
+        f"font-family:monospace;font-size:12px;color:#92400e;'>"
+        f"✅ <b>TAB 5 IS RENDERING</b> &nbsp;·&nbsp; "
+        f"rerun at {_dt.datetime.now().strftime('%H:%M:%S')} "
+        f"·&nbsp; if you see this, the code block is alive."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Diagnostic log: must come FIRST so it survives any later exception ──
+    _mcx_logs = []
+    def _mcxlog(msg):
+        line = str(msg)
+        _mcx_logs.append(line)
+        try:
+            print(f"[MCX] {line}", flush=True)
+        except Exception:
+            pass
+
+    _mcxlog(f"── tab5 render start · today={date.today().isoformat()} ──")
+
+    # Live placeholders so the log keeps redrawing as code progresses past errors.
+    _mcx_log_top = st.empty()
+    _mcx_log_top.code(
+        "(MCX log — will update as the tab renders)",
+        language="text",
+    )
+
     st.markdown(
         "<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;"
         "text-transform:uppercase;color:#64748b;margin-bottom:4px;'>⚙ MCX Settings</div>",
         unsafe_allow_html=True,
     )
 
-    # ── Diagnostic log (rebuilt every rerun) ──
-    _mcx_logs = []
-    def _mcxlog(msg):
-        _mcx_logs.append(str(msg))
+    def _refresh_log_top():
+        _mcx_log_top.code("\n".join(_mcx_logs) if _mcx_logs else "(no log entries)", language="text")
 
     # ── Top control row ──
     mcx_r0 = st.columns([1.2, 1, 1, 1, 1.5])
@@ -1914,6 +1947,7 @@ with tab5:
     _l1_sym = _UNDERLYING_SYM.get(mcx_l1_under.upper(), f"MCX:{mcx_l1_under}-INDEX")
     _mcxlog(f"LEG1 underlying={mcx_l1_under} (chain-symbol={_l1_sym}) → "
             f"{len(_mcx_l1_opts)} expiries: {list(_mcx_l1_opts.keys())[:6]}")
+    _refresh_log_top()
 
     with mcx_legs[2]:
         mcx_l1_ce_exp = expiry_selectbox(
@@ -1953,6 +1987,7 @@ with tab5:
     _l2_sym = _UNDERLYING_SYM.get(mcx_l2_under.upper(), f"MCX:{mcx_l2_under}-INDEX")
     _mcxlog(f"LEG2 underlying={mcx_l2_under} (chain-symbol={_l2_sym}) → "
             f"{len(_mcx_l2_opts)} expiries: {list(_mcx_l2_opts.keys())[:6]}")
+    _refresh_log_top()
 
     with mcx_legs[9]:
         mcx_l2_ce_exp = expiry_selectbox(
@@ -2192,11 +2227,14 @@ with tab5:
                 _d_pe.index   = _d_pe.index.strftime("%H:%M")
                 st.dataframe(_d_pe.style.format("{:.2f}"), use_container_width=True)
 
-    # ── Diagnostic Log Box (always visible) ──
+    _mcxlog("── tab5 render end ──")
+    _refresh_log_top()
+
+    # ── Diagnostic Log Box (always visible, duplicated at bottom for convenience) ──
     st.divider()
     st.markdown(
         "<div style='font-size:10px;font-weight:700;letter-spacing:1.5px;"
-        "text-transform:uppercase;color:#64748b;margin-bottom:4px;'>🪵 MCX Diagnostic Log</div>",
+        "text-transform:uppercase;color:#64748b;margin-bottom:4px;'>🪵 MCX Diagnostic Log (also shown above)</div>",
         unsafe_allow_html=True,
     )
     st.code("\n".join(_mcx_logs) if _mcx_logs else "(no log entries)", language="text")
