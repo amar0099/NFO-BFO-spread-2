@@ -1829,22 +1829,23 @@ with tab3:
         st.markdown("<div style='font-size:12px;font-weight:700;color:#64748b;margin:16px 0 6px 0;'>📊 IV Differential — Sensex IV − Nifty IV (ATM)</div>", unsafe_allow_html=True)
         st.plotly_chart(diff_chart("sx_lo_CE","nf_lo_CE","sx_lo_PE","nf_lo_PE", "Sensex CE IV − Nifty CE IV  &  Sensex PE IV − Nifty PE IV"), use_container_width=True)
 
-        # ── Auto Refresh ──
+        # ── Auto Refresh — DEFERRED (was halting Tab 5 from rendering) ──
         if iv_auto and iv_date_str == date.today().strftime("%Y-%m-%d"):
-            time.sleep(iv_ref_secs)
             st.session_state["_iv_rerun"] = True
-            st.rerun()
+            st.session_state["_iv_rerun_pending"] = True
 
     else:
         st.info("👆 Set expiry dates above and click **Fetch IV Data**.")
 
-# AUTO REFRESH
+# AUTO REFRESH — DEFERRED
 # ─────────────────────────────────────────────
+# Previously this block called st.rerun() inline. That halted script execution
+# BEFORE `with tab5:` (below) could render, leaving Tab 5 permanently blank
+# once Tab 1 had fetched data with Auto Refresh on. Now we just flag it and
+# perform the rerun at the very END of the script.
 
 if auto_refresh and date_str == date.today().strftime("%Y-%m-%d") and not df.empty:
-    time.sleep(refresh_secs)
-    st.session_state.df = fetch_live_data()
-    st.rerun()
+    st.session_state["_main_rerun_pending"] = True
 
 
 # ─────────────────────────────────────────────
@@ -2239,8 +2240,31 @@ with tab5:
     )
     st.code("\n".join(_mcx_logs) if _mcx_logs else "(no log entries)", language="text")
 
-    # ── MCX Auto Refresh ──
+    # ── MCX Auto Refresh — flag for deferred rerun ──
     if mcx_auto and mcx_date_str == date.today().strftime("%Y-%m-%d") and not df_mcx.empty:
-        time.sleep(mcx_ref_secs)
-        st.session_state.df_mcx = _fetch_mcx_data()
-        st.rerun()
+        st.session_state["_mcx_rerun_pending"] = True
+
+
+# ─────────────────────────────────────────────
+# DEFERRED AUTO-REFRESH — runs AFTER all tabs have rendered.
+# Tab 1 / Tab 3 / Tab 5 each set a *_rerun_pending flag in session_state.
+# We honor them here so no tab can short-circuit the rendering of another.
+# ─────────────────────────────────────────────
+
+_any_refresh = (
+    st.session_state.pop("_main_rerun_pending", False)
+    or st.session_state.pop("_iv_rerun_pending", False)
+    or st.session_state.pop("_mcx_rerun_pending", False)
+)
+if _any_refresh:
+    # Sleep once for the *shortest* configured interval (refresh_secs from Tab 1
+    # is the canonical one), then refetch live tab-1 data and rerun.
+    try:
+        time.sleep(refresh_secs)
+    except Exception:
+        time.sleep(5)
+    try:
+        st.session_state.df = fetch_live_data()
+    except Exception:
+        pass
+    st.rerun()
