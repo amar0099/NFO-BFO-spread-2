@@ -189,16 +189,16 @@ _UNDERLYING_SYM = {
     "BANKNIFTY": "NSE:NIFTYBANK-INDEX",
     "FINNIFTY":  "NSE:FINNIFTY-INDEX",
     "MIDCPNIFTY":"NSE:MIDCPNIFTY-INDEX",
-    # MCX commodities — option chain symbol format
+    # MCX commodities — option chain symbol format (big contracts)
     "CRUDEOIL":  "MCX:CRUDEOIL-INDEX",
     "GOLD":      "MCX:GOLD-INDEX",
     "SILVER":    "MCX:SILVER-INDEX",
     "NATURALGAS":"MCX:NATURALGAS-INDEX",
-    "COPPER":    "MCX:COPPER-INDEX",
-    "ALUMINIUM": "MCX:ALUMINIUM-INDEX",
-    "ZINC":      "MCX:ZINC-INDEX",
-    "LEAD":      "MCX:LEAD-INDEX",
-    "NICKEL":    "MCX:NICKEL-INDEX",
+    # MCX mini contracts — same -INDEX symbology format
+    "CRUDEOILM":  "MCX:CRUDEOILM-INDEX",
+    "GOLDM":      "MCX:GOLDM-INDEX",
+    "SILVERM":    "MCX:SILVERM-INDEX",
+    "NATURALGASM":"MCX:NATURALGASM-INDEX",
 }
 
 _MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]
@@ -1855,22 +1855,29 @@ if auto_refresh and date_str == date.today().strftime("%Y-%m-%d") and not df.emp
 # TAB 5 — MCX SPREAD DASHBOARD
 # ─────────────────────────────────────────────
 
-MCX_UNDERLYINGS = ["CRUDEOIL", "GOLD", "SILVER", "NATURALGAS", "COPPER",
-                   "ALUMINIUM", "ZINC", "LEAD", "NICKEL"]
+MCX_UNDERLYINGS_BIG  = ["SILVER", "GOLD", "CRUDEOIL", "NATURALGAS"]
+MCX_UNDERLYINGS_MINI = ["SILVERM", "GOLDM", "CRUDEOILM", "NATURALGASM"]
+MCX_UNDERLYINGS_ALL  = MCX_UNDERLYINGS_BIG + MCX_UNDERLYINGS_MINI
+
+# Big-contract → mini-contract pairing for the auto-pair toggle.
+MCX_BIG_TO_MINI = {
+    "SILVER":     "SILVERM",
+    "GOLD":       "GOLDM",
+    "CRUDEOIL":   "CRUDEOILM",
+    "NATURALGAS": "NATURALGASM",
+}
 
 # Typical strike & step per MCX commodity — used to seed the strike inputs sensibly.
-# Without this, GOLD/SILVER inputs would default to 5000 (CRUDEOIL range) and
-# Fyers would return empty candles even when the symbol format is right.
+# Big & mini share the same underlying price, so strike defaults are identical.
 MCX_STRIKE_DEFAULTS = {
-    "CRUDEOIL":   (5500,  50),
-    "GOLD":       (75000, 100),
-    "SILVER":     (90000, 250),
-    "NATURALGAS": (300,   5),
-    "COPPER":     (800,   5),
-    "ALUMINIUM":  (240,   1),
-    "ZINC":       (280,   1),
-    "LEAD":       (200,   1),
-    "NICKEL":     (1700,  10),
+    "SILVER":      (90000, 250),
+    "SILVERM":     (90000, 250),
+    "GOLD":        (75000, 100),
+    "GOLDM":       (75000, 100),
+    "CRUDEOIL":    (5500,  50),
+    "CRUDEOILM":   (5500,  50),
+    "NATURALGAS":  (300,   5),
+    "NATURALGASM": (300,   5),
 }
 
 with tab5:
@@ -1919,12 +1926,17 @@ with tab5:
         _mcx_log_top.code("\n".join(_mcx_logs) if _mcx_logs else "(no log entries)", language="text")
 
     # ── Top control row ──
-    mcx_r0 = st.columns([1.2, 1, 1, 1, 1.5])
+    mcx_r0 = st.columns([1.1, 0.9, 0.9, 0.9, 1.0, 1.4])
     with mcx_r0[0]: mcx_date     = st.date_input("Date",          value=default_date,            key="mcx_date")
     with mcx_r0[1]: mcx_interval = st.selectbox("Interval (min)", [1, 3, 5, 10, 15, 30, 60], index=2, key="mcx_interval")
     with mcx_r0[2]: mcx_auto     = st.checkbox("Auto Refresh",    value=True,                    key="mcx_auto_ref")
     with mcx_r0[3]: mcx_ref_secs = st.slider("Refresh (sec)",     5, 60, REFRESH_SECONDS,        key="mcx_ref_sec")
-    with mcx_r0[4]: mcx_fetch_btn = st.button("⟳  FETCH MCX DATA", use_container_width=True, type="primary", key="mcx_fetch_btn")
+    with mcx_r0[4]: mcx_pair_mini = st.checkbox(
+        "🔗 Pair Mini", value=True, key="mcx_pair_mini",
+        help="When ON, LEG 2 is auto-set to the MINI of LEG 1 (e.g., SILVER → SILVERM). "
+             "When OFF, LEG 2 can be any of the 8 contracts."
+    )
+    with mcx_r0[5]: mcx_fetch_btn = st.button("⟳  FETCH MCX DATA", use_container_width=True, type="primary", key="mcx_fetch_btn")
 
     mcx_date_str = mcx_date.strftime("%Y-%m-%d")
 
@@ -1941,7 +1953,8 @@ with tab5:
         unsafe_allow_html=True,
     )
     with mcx_legs[1]:
-        mcx_l1_under = st.selectbox("Underlying", MCX_UNDERLYINGS, index=0, key="mcx_l1_under")
+        # LEG 1 is always one of the BIG contracts. (The mini sits in LEG 2.)
+        mcx_l1_under = st.selectbox("Underlying", MCX_UNDERLYINGS_BIG, index=0, key="mcx_l1_under")
 
     # Expiries via the existing get_expiries_for — it already handles MCX:CRUDEOIL-INDEX
     _mcx_l1_opts = get_expiries_for("MCX", mcx_l1_under)
@@ -1982,7 +1995,22 @@ with tab5:
         unsafe_allow_html=True,
     )
     with mcx_legs[8]:
-        mcx_l2_under = st.selectbox("Underlying", MCX_UNDERLYINGS, index=1, key="mcx_l2_under")
+        if mcx_pair_mini:
+            # Auto-paired: LEG 2 is forced to the MINI of LEG 1.
+            mcx_l2_under = MCX_BIG_TO_MINI.get(mcx_l1_under, MCX_UNDERLYINGS_MINI[0])
+            st.markdown(
+                "<div style='font-size:11px;color:#64748b;'>Underlying</div>"
+                f"<div style='padding:6px 0 0 0;font-size:14px;font-weight:600;color:#0284c7;'>"
+                f"🔗 {mcx_l2_under} <span style='font-size:9px;color:#94a3b8;'>(auto)</span></div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            # Free pick from any of the 8 (big + mini).
+            mcx_l2_under = st.selectbox(
+                "Underlying", MCX_UNDERLYINGS_ALL,
+                index=MCX_UNDERLYINGS_ALL.index(MCX_BIG_TO_MINI.get(mcx_l1_under, MCX_UNDERLYINGS_MINI[0])),
+                key="mcx_l2_under_free",
+            )
 
     _mcx_l2_opts = get_expiries_for("MCX", mcx_l2_under)
     _l2_sym = _UNDERLYING_SYM.get(mcx_l2_under.upper(), f"MCX:{mcx_l2_under}-INDEX")
