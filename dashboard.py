@@ -1870,12 +1870,12 @@ MCX_BIG_TO_MINI = {
 # Typical strike & step per MCX commodity — used to seed the strike inputs sensibly.
 # Big & mini share the same underlying price, so strike defaults are identical.
 MCX_STRIKE_DEFAULTS = {
-    "SILVER":      (90000, 250),
-    "SILVERM":     (90000, 250),
-    "GOLD":        (75000, 100),
-    "GOLDM":       (75000, 100),
-    "CRUDEOIL":    (5500,  50),
-    "CRUDEOILM":   (5500,  50),
+    "SILVER":      (235000, 5000),
+    "SILVERM":     (235000, 5000),
+    "GOLD":        (140000, 1000),
+    "GOLDM":       (140000, 1000),
+    "CRUDEOIL":    (6600,  50),
+    "CRUDEOILM":   (6600,  50),
     "NATURALGAS":  (300,   5),
     "NATURALGASM": (300,   5),
 }
