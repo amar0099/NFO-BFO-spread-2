@@ -1960,7 +1960,7 @@ with tab5:
     )
     with mcx_legs[1]:
         # LEG 1 is always one of the BIG contracts. (The mini sits in LEG 2.)
-        mcx_l1_under = st.selectbox("Underlying", MCX_UNDERLYINGS_BIG, index=0, key="mcx_l1_under")
+        mcx_l1_under = st.selectbox("Underlying", MCX_UNDERLYINGS_ALL, index=0, key="mcx_l1_under")
 
     # Expiries via the existing get_expiries_for — it already handles MCX:CRUDEOIL-INDEX
     _mcx_l1_opts = get_expiries_for("MCX", mcx_l1_under)
