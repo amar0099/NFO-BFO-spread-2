@@ -1386,8 +1386,8 @@ with tab1:
     _nf_opts = get_expiries_for(nifty_exchange, nifty_underlying)
     with legs_row[11]: nifty_ce_expiry   = expiry_selectbox("CE Expiry", _nf_opts, "nf_ce_man", "nf_ce_sel", "260310")
     with legs_row[12]: nifty_pe_expiry   = expiry_selectbox("PE Expiry", _nf_opts, "nf_pe_man", "nf_pe_sel", "260310")
-    with legs_row[13]: nifty_ce_strike   = st.number_input("CE Strike", value=24800, step=50, key="nf_ce_str")
-    with legs_row[14]: nifty_pe_strike   = st.number_input("PE Strike", value=24800, step=50, key="nf_pe_str")
+    with legs_row[13]: nifty_ce_strike   = st.number_input("CE Strike", value=22550, step=50, key="nf_ce_str")
+    with legs_row[14]: nifty_pe_strike   = st.number_input("PE Strike", value=22550, step=50, key="nf_pe_str")
 
     st.divider()
 
