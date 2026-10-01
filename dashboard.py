@@ -366,34 +366,119 @@ def expiry_selectbox(label, opts_dict, manual_key, select_key, default_manual):
 # SYMBOL BUILDER
 # ─────────────────────────────────────────────
 
-def build_symbol(exchange, underlying, expiry, option_type, strike):
-    """expiry is already a Fyers code: 26MAR (monthly) or 260325 (weekly YYMMDD)."""
+def _weekly_symbol_candidates(exchange, underlying, expiry, option_type, strike):
+    """Return possible FYERS option symbols for a weekly expiry.
+
+    FYERS has used more than one weekly-symbol convention.  The expiry value
+    in this app is kept as YYMMDD, so we can safely generate both the current
+    compact form and the older numeric form and let the history API decide
+    which one is valid.
+    """
     ot = "CE" if option_type.upper() in ("C", "CE") else "PE"
-    expiry = expiry.strip().upper()
-    # Monthly: contains letters → use as-is
+    expiry = str(expiry).strip().upper()
+    yy, mm, dd = expiry[0:2], expiry[2:4], expiry[4:6]
+
+    # Current FYERS-style weekly form seen in the option chain, e.g.
+    # 261006 -> 26O06 for October 2026.
+    month_letter = {
+        "01": "J", "02": "F", "03": "M", "04": "A",
+        "05": "M", "06": "J", "07": "J", "08": "A",
+        "09": "S", "10": "O", "11": "N", "12": "D",
+    }[mm]
+    current = f"{exchange}:{underlying}{yy}{month_letter}{dd}{strike}{ot}"
+
+    # Older FYERS/NSE-style weekly form: YYMMDD.
+    legacy = f"{exchange}:{underlying}{yy}{mm}{dd}{strike}{ot}"
+
+    # Preserve order and remove duplicates.
+    return list(dict.fromkeys([current, legacy]))
+
+
+def build_symbol(exchange, underlying, expiry, option_type, strike):
+    """Build the primary FYERS option symbol.
+
+    Monthly expiry: 26MAR / 26OCT etc.
+    Weekly expiry: YYMMDD internally, converted to FYERS' compact weekly form.
+    Use fetch_candles() for automatic fallback to the legacy weekly form.
+    """
+    ot = "CE" if option_type.upper() in ("C", "CE") else "PE"
+    expiry = str(expiry).strip().upper()
+
+    # Monthly: contains letters -> use the expiry code exactly as supplied.
     if any(c.isalpha() for c in expiry):
         return f"{exchange}:{underlying}{expiry}{strike}{ot}"
-    # Weekly numeric YYMMDD → YYM(no-zero)DD
-    yy, mm, dd = expiry[0:2], expiry[2:4], expiry[4:6]
-    return f"{exchange}:{underlying}{yy}{int(mm)}{dd}{strike}{ot}"
+
+    # Keep the numeric form as the primary candidate. fetch_candles() will
+    # automatically try the newer compact weekly form as a fallback.
+    return _weekly_symbol_candidates(
+        exchange, underlying, expiry, option_type, strike
+    )[1]
 
 # ─────────────────────────────────────────────
 # FETCH CANDLES
 # ─────────────────────────────────────────────
 
 def fetch_candles(fyers, symbol, interval, date_str=None):
+    """Fetch candles and automatically retry alternate weekly symbol formats."""
     if date_str is None:
         date_str = date.today().strftime("%Y-%m-%d")
-    response = fyers.history(data={
-        "symbol": symbol, "resolution": str(interval),
-        "date_format": "1", "range_from": date_str,
-        "range_to": date_str, "cont_flag": "1"
-    })
-    if response.get("s") != "ok":
-        return pd.DataFrame()
-    df = pd.DataFrame(response["candles"], columns=["timestamp","open","high","low","close","volume"])
-    df["datetime"] = pd.to_datetime(df["timestamp"], unit="s").dt.tz_localize("UTC").dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
-    return df.drop(columns=["timestamp"]).set_index("datetime")
+
+    candidates = [str(symbol)]
+
+    # build_symbol() uses the unambiguous YYMMDD form for weekly expiries.
+    # From that form we can safely generate FYERS' newer compact form too.
+    import re
+    m = re.match(
+        r"^(NSE|BSE):(NIFTY|SENSEX)(\d{2})(\d{2})(\d{2})(\d+)(CE|PE)$",
+        str(symbol).upper(),
+    )
+    if m:
+        exchange, underlying, yy, mm, dd, strike, ot = m.groups()
+        month_letter = {
+            "01": "J", "02": "F", "03": "M", "04": "A",
+            "05": "M", "06": "J", "07": "J", "08": "A",
+            "09": "S", "10": "O", "11": "N", "12": "D",
+        }.get(mm)
+        if month_letter:
+            candidates.append(
+                f"{exchange}:{underlying}{yy}{month_letter}{dd}{strike}{ot}"
+            )
+
+    # Remove duplicates while preserving priority.
+    candidates = list(dict.fromkeys(candidates))
+
+    for candidate in candidates:
+        try:
+            response = fyers.history(data={
+                "symbol": candidate,
+                "resolution": str(interval),
+                "date_format": "1",
+                "range_from": date_str,
+                "range_to": date_str,
+                "cont_flag": "1",
+            })
+            if response.get("s") != "ok" or not response.get("candles"):
+                continue
+
+            df = pd.DataFrame(
+                response["candles"],
+                columns=["timestamp", "open", "high", "low", "close", "volume"],
+            )
+            if df.empty:
+                continue
+
+            df["datetime"] = (
+                pd.to_datetime(df["timestamp"], unit="s")
+                .dt.tz_localize("UTC")
+                .dt.tz_convert("Asia/Kolkata")
+                .dt.tz_localize(None)
+            )
+            return df.drop(columns=["timestamp"]).set_index("datetime")
+        except Exception:
+            continue
+
+    return pd.DataFrame()
+
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
