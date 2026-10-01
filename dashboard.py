@@ -951,10 +951,10 @@ with tab2:
     bse_exp = next_weekday_str(3)  # Thursday
 
     LEG_DEFAULTS = [
-        ("BSE", "SENSEX",  nse_exp, 80000, "CE", 1.0),
-        ("NSE", "NIFTY", bse_exp, 24200, "CE", 3.3),
-        ("BSE", "SENSEX", bse_exp, 80000, "CE", 1.0),
-        ("NSE", "NIFTY",  nse_exp, 24200, "CE", 3.3),
+        ("BSE", "SENSEX",  nse_exp, 72500, "CE", 1.0),
+        ("NSE", "NIFTY", bse_exp, 22500, "CE", 3.3),
+        ("BSE", "SENSEX", bse_exp, 72500, "CE", 1.0),
+        ("NSE", "NIFTY",  nse_exp, 22500, "CE", 3.3),
     ]
 
     if "c_defaults_set" not in st.session_state:
@@ -1158,14 +1158,14 @@ with tab4:
     bse_exp = next_weekday_str(3)  # Thursday
 
     LEG_DEFAULTS = [
-        ("BSE", "SENSEX",  nse_exp, 80000, "CE", 1.0),
-        ("NSE", "NIFTY", bse_exp, 24200, "CE", 3.3),
-        ("BSE", "SENSEX", bse_exp, 80000, "CE", 1.0),
-        ("NSE", "NIFTY",  nse_exp, 24200, "CE", 3.3),
-        ("BSE", "SENSEX",  nse_exp, 80000, "CE", 1.0),
-        ("NSE", "NIFTY", bse_exp, 24200, "CE", 3.3),
-        ("BSE", "SENSEX", bse_exp, 80000, "CE", 1.0),
-        ("NSE", "NIFTY",  nse_exp, 24200, "CE", 3.3),
+        ("BSE", "SENSEX",  nse_exp, 72500, "CE", 1.0),
+        ("NSE", "NIFTY", bse_exp, 22500, "CE", 3.3),
+        ("BSE", "SENSEX", bse_exp, 72500, "CE", 1.0),
+        ("NSE", "NIFTY",  nse_exp, 22500, "CE", 3.3),
+        ("BSE", "SENSEX",  nse_exp, 72500, "CE", 1.0),
+        ("NSE", "NIFTY", bse_exp, 22500, "CE", 3.3),
+        ("BSE", "SENSEX", bse_exp, 72500, "CE", 1.0),
+        ("NSE", "NIFTY",  nse_exp, 22500, "CE", 3.3),
     ]
 
     if "b8_defaults_set" not in st.session_state:
@@ -1377,8 +1377,8 @@ with tab1:
     _sx_opts = get_expiries_for(sensex_exchange, sensex_underlying)
     with legs_row[3]:  sensex_ce_expiry  = expiry_selectbox("CE Expiry", _sx_opts, "sx_ce_man", "sx_ce_sel", "260312")
     with legs_row[4]:  sensex_pe_expiry  = expiry_selectbox("PE Expiry", _sx_opts, "sx_pe_man", "sx_pe_sel", "260312")
-    with legs_row[5]:  sensex_ce_strike  = st.number_input("CE Strike", value=80000, step=100, key="sx_ce_str")
-    with legs_row[6]:  sensex_pe_strike  = st.number_input("PE Strike", value=80000, step=100, key="sx_pe_str")
+    with legs_row[5]:  sensex_ce_strike  = st.number_input("CE Strike", value=72500, step=100, key="sx_ce_str")
+    with legs_row[6]:  sensex_pe_strike  = st.number_input("PE Strike", value=72500, step=100, key="sx_pe_str")
     legs_row[7].markdown("<div style='padding-top:28px;font-size:10px;color:#e2e8f0;text-align:center;'>│</div>", unsafe_allow_html=True)
     legs_row[8].markdown("<div style='padding-top:28px;font-size:10px;font-weight:700;letter-spacing:1px;color:#0284c7;'>LEG 2</div>", unsafe_allow_html=True)
     with legs_row[9]:  nifty_exchange    = st.selectbox("Exchange",   ["NSE","BSE"],                                                           index=0, key="nf_exch")
