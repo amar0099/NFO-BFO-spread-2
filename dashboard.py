@@ -951,10 +951,10 @@ with tab2:
     bse_exp = next_weekday_str(3)  # Thursday
 
     LEG_DEFAULTS = [
-        ("BSE", "SENSEX",  nse_exp, 72500, "CE", 1.0),
-        ("NSE", "NIFTY", bse_exp, 22600, "CE", 3.3),
-        ("BSE", "SENSEX", bse_exp, 72500, "CE", 1.0),
-        ("NSE", "NIFTY",  nse_exp, 22600, "CE", 3.3),
+        ("BSE", "SENSEX",  nse_exp, 80000, "CE", 1.0),
+        ("NSE", "NIFTY", bse_exp, 24200, "CE", 3.3),
+        ("BSE", "SENSEX", bse_exp, 80000, "CE", 1.0),
+        ("NSE", "NIFTY",  nse_exp, 24200, "CE", 3.3),
     ]
 
     if "c_defaults_set" not in st.session_state:
